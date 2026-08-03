@@ -114,6 +114,35 @@ toplevel derivation was forced. This is what produced the two-tier design
 above, and the reason `tool/checks/test` evaluates `.drvPath` explicitly rather
 than trusting `nix flake check`.
 
+**Activation would have deleted an authentication secret that nothing
+declared.** `home/programs/git.nix` carried `rm -f ~/.gitconfig`, right in
+intent: git reads that file *after* `~/.config/git/config`, so leaving it in
+place would have let the unmanaged copy silently win every overlapping key. But
+the inventory taken before M2 found it also held the `gh` credential helper for
+github.com and gist.github.com — and every remote here is HTTPS, so the switch
+would have removed push authentication at the moment it ran, with nothing to
+restore from. The helper is now declared through `programs.gh`, and the
+activation script moves the file to `~/.gitconfig.before-home-manager.<stamp>`
+instead of removing it. That script is the one place in this configuration that
+escapes home-manager's refusal to clobber unmanaged files, which is exactly why
+it should not delete.
+
+**Taking over `~/.zshrc` would have removed `claude` from `PATH`.** The file is
+26 bytes and does one thing — source `~/.local/bin/env` — and that is the only
+thing putting `~/.local/bin` on `PATH`. `claude`, `uv` and `uvx` live there and
+nowhere else. home-manager refuses to clobber the file, so this would have
+surfaced as a refusal rather than a silent break; the trap is that clearing the
+refusal is precisely the step that drops the line. `programs.zsh.initContent`
+now declares the directory.
+
+**`home.sessionPath` prepends.** It generates
+`export PATH="$dir${PATH:+:}$PATH"`, so a directory added through it shadows
+the declared packages rather than deferring to them — and `~/.local/bin` holds
+standalone installs that overlap `packages.nix` (`bat`). Appending from
+`programs.zsh.initContent` keeps the declared package winning. Established by
+reading the built `hm-session-vars.sh`, not by trusting the option's name; the
+first version of that change was committed to the opposite belief.
+
 **`pre-push` ran the whole suite to delete a branch.** Deleting the first
 merged branch was blocked by a test run that could not tell it apart from a
 push of new commits. Nothing a deletion does can fail a test, and on this host
@@ -137,12 +166,22 @@ When stuck, grep it for the error text rather than reading it.
 
 ## Next
 
-M2, activation. Before running `home-manager switch`, inventory what already
-exists in `$HOME` that home-manager will want to own — `~/.zshrc`,
-`~/.gitconfig`, `~/.config/nix/nix.conf` — because that is where it will fail,
-and it fails part-way rather than cleanly. Deal with those first, then work
-the M2 list in `definition-of-done.md`; `tool/doctor.sh` exiting 0 with no ✗ is
-the item that confirms the rest.
+M2, activation. The `$HOME` inventory it needed is **done**, on 2026-08-03, and
+it found two things that would have broken this host — both recorded above.
+`~/.zshenv`, `~/.zprofile`, `~/.config/git/config`, `~/.config/nix/nix.conf`,
+`starship.toml`, `nvim` and `yazi` are all absent, so nothing else collides;
+`~/.bashrc` and `~/.profile` are untouched because no bash module is declared.
+
+Two files still stand in the way, and both are expected to:
+
+- `~/.zshrc` — home-manager will refuse it. Its one line is now declared, so
+  deleting it loses nothing. Check that against the file before deleting, not
+  against this sentence.
+- `~/.gitconfig` — the activation script moves it aside on its own. Confirm the
+  backup exists afterwards, and that `git push` still authenticates.
+
+Then work the M2 list in `definition-of-done.md`; `tool/doctor.sh` exiting 0
+with no ✗ is the item that confirms the rest.
 
 One thing left over from M1, not blocking: `gitleaks` is not installed here, so
 the pre-commit secret scan has never run locally on this repository. CI's

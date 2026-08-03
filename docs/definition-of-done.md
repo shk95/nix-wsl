@@ -73,6 +73,12 @@ rather than switching. These are the items a build cannot establish.
       the item most likely to fail
 - [ ] A newly opened login shell is the nix-managed zsh (`echo $SHELL`)
 - [ ] `git config user.email` reports the address set in `flake.nix`
+- [ ] `git push` still authenticates over HTTPS — the `gh` credential helper
+      moved out of an unmanaged `~/.gitconfig` into `programs.gh`, and the
+      activation script moves that file aside
+- [ ] `~/.gitconfig.before-home-manager.*` exists, holding what was moved
+- [ ] `command -v claude` still resolves in a fresh shell — `~/.local/bin` was
+      reachable only through the `~/.zshrc` that home-manager replaces
 - [ ] `nvim` resolves inside the nix profile (`command -v nvim`)
 - [ ] `nix flake metadata` succeeds with **no** `NIX_CONFIG` set — meaning
       `~/.config/nix/nix.conf` is now managed

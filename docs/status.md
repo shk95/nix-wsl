@@ -9,7 +9,7 @@ Last updated: 2026-08-04.
 | Milestone | State |
 | --- | --- |
 | M0 — The flake builds reproducibly | done |
-| M1 — Scaffold conventions applied and verified by cloning | done |
+| M1 — Scaffold conventions applied and verified by cloning | done — re-verified 2026-08-04 |
 | M2 — Activated on this host | done — activated 2026-08-03, login shell 2026-08-04 |
 | M3 — Experiments, and what they leave behind | **next** |
 
@@ -240,6 +240,16 @@ anything about files this repository does not track, re-run it outside the
 sandbox and compare. `warning: unable to access '.gitmodules': Permission
 denied`, emitted by git commands that otherwise work, is the same cause showing
 through.
+
+**A ticked box outlived the code it was ticked against.** M1 was verified by
+cloning on 2026-08-03. Twenty-two commits later every file that verification
+exercises had been rewritten — all three hooks, all three checks,
+`worktree.sh`, `README.md`, and `doctor.sh`, which is the literal subject of
+one of the items. Nothing flagged it: a checklist records that something was
+true, never when it stopped being. Re-running took minutes and found a stale
+`README.md` sentence describing a `doctor.sh` verdict that no longer exists.
+The cheap habit is to re-run the clone verification whenever the files it
+touches change, rather than treating M1 as finished forever.
 
 **`pre-push` ran the whole suite to delete a branch.** Deleting the first
 merged branch was blocked by a test run that could not tell it apart from a

@@ -53,6 +53,20 @@ the reader to run `just bootstrap` when `just` is one of the packages the
 bootstrap installs — which is the entire argument for doing this rather than
 reasoning about it.
 
+**Re-verified on 2026-08-04**, because a ticked box is only true of the code it
+was ticked against. By then every file this list exercises had been
+rewritten — all three hooks, all three checks, `worktree.sh`, `doctor.sh` and
+`README.md` — most pointedly `tool/doctor.sh`, which is the literal subject of
+the second item. All six passed. The clone again found one stale thing, smaller
+than last time: step 3 of `README.md` still described the doctor's old two-way
+verdict, which no longer exists.
+
+**A box this list can no longer tick on this host:** the first run was done
+before activation, so the clone genuinely hit *experimental Nix feature
+'nix-command' is disabled* and the `NIX_CONFIG` workaround was exercised. This
+host is activated now, so that path is documented but untested here. It needs a
+machine that has never run `home-manager switch`.
+
 - [x] The clone lands on `dev`, with `CLAUDE.md`, `tool/` and `docs/` present
 - [x] `tool/doctor.sh` fails on the unset hooks path and prints the exact
       command to fix it

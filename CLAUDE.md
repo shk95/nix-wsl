@@ -1,10 +1,13 @@
 # Working on this repository
 
-A deliberately experimental Nix setup: standalone home-manager on WSL, no
-NixOS-WSL and no system layer, seeded from the nix-darwin config at
-[shk95/nix-config](https://github.com/shk95/nix-config). It exists to try
-things and to learn Nix, and its findings are meant to feed a later unified
-config repository covering WSL, macOS and NixOS together.
+A Nix testbed for WSL, and nothing else. Standalone home-manager with no
+system layer today; NixOS-WSL is the next thing to try here. Seeded from the
+nix-darwin config at
+[shk95/nix-config](https://github.com/shk95/nix-config), but macOS is not in
+scope — everything here targets `x86_64-linux`, and the checks assume it.
+
+It exists to try things and to learn Nix. What survives it is the findings,
+not the configuration.
 
 ## Start here, every session
 
@@ -24,10 +27,15 @@ are the literal messages. Do not read it end to end; it is a lookup table.
 ## The rules that are expensive to break
 
 - **The findings are the deliverable, not the configuration.** This repo is a
-  scratch pad; the unified repo it feeds is the real target. A problem that
-  cost real time and went unrecorded means the experiment produced nothing,
-  because the config itself will be rewritten and the lesson will not survive
-  it. Record it in `docs/troubleshooting.md`.
+  scratch pad. A problem that cost real time and went unrecorded means the
+  experiment produced nothing, because the config itself is disposable and the
+  lesson will not survive being rewritten. Record it in
+  `docs/troubleshooting.md`.
+- **Keep the scope at WSL.** Everything here targets `x86_64-linux`, and
+  `tool/checks/test` assumes it — a configuration for another system is
+  refused outright rather than half-verified. Adding one is not a small
+  change; it re-opens the question of what "verified" means for a build this
+  machine cannot run.
 - **Never activate without being asked.** `home-manager switch` rewrites files
   in `$HOME` that this repository does not own — `~/.zshrc`, `~/.gitconfig` and
   others — and home-manager refuses to clobber an existing unmanaged file, so a

@@ -59,42 +59,29 @@ command -v gh >/dev/null 2>&1 && ok "gh" \
 
 echo
 echo "Flavours declared in flake.nix"
-# What this host can do with each, in the two tiers tool/checks/test uses:
-# every configuration is *evaluated* wherever you are — Nix evaluates a foreign
-# system's modules perfectly well — and only one whose target system matches
-# this machine is *built*. So "cannot build here" never means "unverified".
+# tool/checks/test builds every configuration on the host it runs on, so what
+# matters here is only whether each one can also be *activated* from this
+# machine. Building and activating are different questions: a NixOS closure
+# builds on any Linux box, and only switching to it needs the real host.
 
-kernel=$(uname -s)
 found=0
 
 if grep -q 'homeConfigurations' flake.nix 2>/dev/null; then
   found=1
-  ok "homeConfigurations — eval, build and switch here (for entries targeting this system)"
-fi
-
-if grep -q 'darwinConfigurations' flake.nix 2>/dev/null; then
-  found=1
-  if [ "$kernel" = "Darwin" ]; then
-    ok "darwinConfigurations — eval and build here"
-  else
-    warn "darwinConfigurations — eval only on this $kernel host" \
-         "Option typos, type errors and module assertions are still caught. Only the build needs real macOS; tool/checks/test reports that gap rather than hiding it."
-  fi
+  ok "homeConfigurations — build and switch here"
 fi
 
 if grep -q 'nixosConfigurations' flake.nix 2>/dev/null; then
   found=1
   if [ -r /etc/os-release ] && grep -q '^ID=nixos' /etc/os-release; then
-    ok "nixosConfigurations — eval, build and switch here"
-  elif [ "$kernel" = "Linux" ]; then
-    ok "nixosConfigurations — eval and build here (switch needs the target host)"
+    ok "nixosConfigurations — build and switch here"
   else
-    warn "nixosConfigurations — eval only on this $kernel host" \
-         "The closure needs a Linux builder. Evaluation still catches option and assertion errors."
+    warn "nixosConfigurations — build here, but not switch" \
+         "nixos-rebuild switch needs the target host. The closure still builds and is still verified; only activation is out of reach."
   fi
 fi
 
-[ "$found" -eq 1 ] || warn "no homeConfigurations/darwinConfigurations/nixosConfigurations in flake.nix" \
+[ "$found" -eq 1 ] || warn "no homeConfigurations or nixosConfigurations in flake.nix" \
      "tool/checks/test has nothing to verify."
 
 echo

@@ -78,11 +78,12 @@ rather than switching. These are the items a build cannot establish.
       `~/.config/nix/nix.conf` is now managed
 - [ ] `tool/doctor.sh` exits 0 with no ✗
 
-## M3 — Experiments that feed the unified repository
+## M3 — Experiments, and what they leave behind
 
 Ongoing rather than completable. The bar is not "the experiment worked" — a
 failed experiment is a perfectly good outcome — but that it left something
-behind.
+behind. NixOS-WSL is the next one; anything that would take this repository
+off `x86_64-linux` is out of scope rather than an experiment.
 
 - [ ] Each experiment ends with either an entry in `docs/troubleshooting.md` or
       a decision recorded in `docs/status.md`, with the reasoning

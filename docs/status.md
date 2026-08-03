@@ -11,14 +11,13 @@ Last updated: 2026-08-03.
 | M0 — The flake builds reproducibly | done |
 | M1 — Scaffold conventions applied and verified by cloning | done |
 | M2 — Activated on this host | **next** — not started, deliberately |
-| M3 — Experiments feeding the unified repository | ongoing |
+| M3 — Experiments, and what they leave behind | ongoing |
 
 Repository setup, 2026-08-03: `dev` is the default branch, `master` is
 protected and requires both `Secret scan` and `Format, lint, eval and build` —
 names taken from what a real run reported, not guessed, since a required check
 whose name does not match blocks every merge waiting for something that never
-arrives. The blocked labels are `needs-manual-check`, `needs-aarch64-darwin`
-and `needs-nixos-host`.
+arrives. The blocked labels are `needs-manual-check` and `needs-nixos-host`.
 
 ```
 $ export NIX_CONFIG="experimental-features = nix-command flakes"   # see CLAUDE.md
@@ -65,13 +64,24 @@ cannot infer which Nix should generate `nix.conf`, unlike the NixOS and
 nix-darwin modules. Without it the build fails an assertion — and, importantly,
 one that `nix flake check` never reaches. Recorded in `troubleshooting.md`.
 
-**Verification is two-tier, and lives in `tool/checks/test`.** Evaluate every
-configuration from any host, build only those targeting this system. This came
-out of discovering that `nix flake check` does not descend into
+**Verification is two-tier, and lives in `tool/checks/test`.** Evaluate each
+configuration by forcing its toplevel `.drvPath`, then build it. This came out
+of discovering that `nix flake check` does not descend into
 `homeConfigurations` at all, so a green check said nothing about whether the
 configuration worked. The same script is the `stacks/nix` overlay in
 [shk95/project-scaffold](https://github.com/shk95/project-scaffold); fixes
 belong there as well as here.
+
+**The checks assume every configuration targets this host, and this repo stays
+that way.** Everything here is `x86_64-linux`, NixOS-WSL included, so a
+configuration for another system is refused by name rather than
+half-verified. An earlier version carried machinery for cross-system
+verification — evaluate everywhere, build what matches, warn when a shared
+module reached something unbuilt. It was removed: nothing in a WSL-only repo
+can ever trigger it, and it had been validated only against a two-flavour
+repository built specifically to validate it, laid out the way the heuristic
+already assumed. The reasoning survives as a design note in the overlay's
+README, to be rebuilt against a real multi-host layout if one ever exists.
 
 **Activation is deferred and stays a manual act.** Every claim made so far was
 established by building, never by switching. This is not caution for its own
@@ -134,16 +144,14 @@ and it fails part-way rather than cleanly. Deal with those first, then work
 the M2 list in `definition-of-done.md`; `tool/doctor.sh` exiting 0 with no ✗ is
 the item that confirms the rest.
 
-Two things left over from M1, neither blocking:
-
-- The blast-radius warning in `tool/checks/test` has only ever been exercised
-  against a synthetic two-flavour repository. It stays unproven in real use
-  until this repo, or the unified one, actually declares a configuration this
-  host cannot build.
-- `gitleaks` is not installed here, so the pre-commit secret scan has never
-  run locally on this repository. CI's `Secret scan` job has covered every
-  push so far, which is the backstop working as designed rather than a reason
-  to leave it uninstalled.
+One thing left over from M1, not blocking: `gitleaks` is not installed here, so
+the pre-commit secret scan has never run locally on this repository. CI's
+`Secret scan` job has covered every push, which is the backstop working as
+designed — but note that it only *detects*, and `dev` is not a protected
+branch, so on a public repository a secret is already public by the time the
+job fails. Adding `gitleaks` to `home/packages.nix` costs one line and arrives
+with M2 rather than needing its own task. Worth doing before the M3 secrets
+experiment, not after.
 
 ---
 

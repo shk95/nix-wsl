@@ -1,20 +1,9 @@
 name: CI
 
-# One Linux runner, and deliberately no macOS one.
-#
-# tool/checks/test evaluates *every* configuration — darwin and NixOS
-# included — from whatever host it runs on, and builds only the ones targeting
-# that host's system. So a Linux runner already catches option typos, type
-# errors and module assertions in a darwin configuration. What it cannot do is
-# build one, and a macOS runner is billed at several times the Linux rate to
-# close a gap that the person who owns the Mac closes for free the next time
-# they run `darwin-rebuild switch`. The gap is recorded instead — see
-# decisions/005-unfinishable-work-becomes-an-issue.md.
-#
-# The Linux build here is *not* redundant with the one on the contributor's
-# machine. A local build can succeed because of that machine's store, its
-# NIX_CONFIG or its flake registry; this one proves the flake builds from
-# nothing but the repository and flake.lock. That is
+# The Linux build here is *not* redundant with the identical command on the
+# contributor's machine. A local build can succeed because of that machine's
+# store, its NIX_CONFIG or its flake registry; this one proves the flake
+# builds from nothing but the repository and flake.lock. That is
 # decisions/006-verify-the-clone.md in build form, and no local run can
 # substitute for it.
 #
@@ -37,13 +26,7 @@ jobs:
     name: Format, lint, eval and build
     runs-on: ubuntu-latest
     steps:
-      # Full history: tool/checks/test diffs against origin/dev to work out
-      # which changes reach a configuration it could not build. With the
-      # default shallow clone that branch is absent and the check degrades to
-      # "not computed".
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
       # No binary cache action here on purpose.
       # DeterminateSystems/magic-nix-cache-action now requires a FlakeHub

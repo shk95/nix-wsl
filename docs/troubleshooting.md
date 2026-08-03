@@ -29,16 +29,16 @@ Note that `nix flake check` passes with this bug present; see the entry below.
 ### `nix flake check` passes but the configuration is broken
 
 `nix flake check` validates the flake's shape and its standard outputs. It does
-not descend into `homeConfigurations`, `darwinConfigurations` or
-`nixosConfigurations` — those are arbitrary attributes as far as it is
-concerned. Forcing the toplevel derivation is what actually evaluates them:
+not descend into `homeConfigurations` or `nixosConfigurations` — those are
+arbitrary attributes as far as it is concerned. Forcing the toplevel derivation
+is what actually evaluates them:
 
 ```sh
 nix eval --raw '.#homeConfigurations."<name>".activationPackage.drvPath'
-nix eval --raw '.#darwinConfigurations."<name>".config.system.build.toplevel.drvPath'
+nix eval --raw '.#nixosConfigurations."<name>".config.system.build.toplevel.drvPath'
 ```
 
-`tool/checks/test` does this for every configuration, on every host.
+`tool/checks/test` does this for every configuration.
 
 ### `Path 'flake.nix' in the repository "..." is not tracked by Git`
 
@@ -102,17 +102,6 @@ invokes `tool/checks/test`, which is a Nix command, so on a host where flakes
 are not enabled globally the push dies with a Nix error. Export `NIX_CONFIG` in
 the shell you push from. `--no-verify` also gets the push through, but skips
 the tests, which is the thing the hook is for.
-
-### `a 'aarch64-darwin' with features {} is required to build ..., but I am a 'x86_64-linux'`
-
-Seen while *evaluating* — not building — a configuration for another system.
-It means that configuration uses import-from-derivation: evaluation has to
-build something for the foreign system part-way through, and there is no
-builder for it. Evaluation of a foreign system otherwise works fine, so this
-message specifically identifies IFD rather than a general limitation.
-
-Nothing to fix locally. That configuration drops to build-only verification on
-its native host; file it as `blocked/needs-<system>`.
 
 ### statix: `Found empty pattern in function argument`
 

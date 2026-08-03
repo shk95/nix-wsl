@@ -57,9 +57,14 @@ command aborts instead of adding the files you actually meant.
 
 ### `experimental Nix feature 'nix-command' is disabled`
 
-This host has no `~/.config/nix/nix.conf` yet. See the **This host** section of
-`CLAUDE.md`: export `NIX_CONFIG="experimental-features = nix-command flakes"`
-rather than writing the file, which home-manager will later refuse to clobber.
+There is no `~/.config/nix/nix.conf` yet, which is the state of any machine
+before its first `home-manager switch` — `home/nix.nix` is what writes it.
+Export `NIX_CONFIG="experimental-features = nix-command flakes"` for the
+session rather than writing the file by hand: home-manager refuses to clobber
+an unmanaged file, so hand-writing it turns the first switch into a failure.
+
+This host passed that point on 2026-08-03 and no longer needs the variable. The
+entry stays because a fresh clone on a new machine starts where this one did.
 
 Note that `nix config show` cannot diagnose this — it needs `nix-command` in
 order to run at all. `tool/doctor.sh` probes with `nix flake metadata` instead,

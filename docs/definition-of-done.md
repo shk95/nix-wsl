@@ -67,22 +67,29 @@ reasoning about it.
 Deliberately deferred until now; everything above was verified by building
 rather than switching. These are the items a build cannot establish.
 
-- [ ] `home-manager switch --flake .#user1` completes without error
-- [ ] Existing `~/.zshrc`, `~/.gitconfig` and similar were dealt with
+Activated 2026-08-03. Nine of ten below were verified the same day; the login
+shell is the exception and is explained under it.
+
+- [x] `home-manager switch --flake .#user1` completes without error
+- [x] Existing `~/.zshrc`, `~/.gitconfig` and similar were dealt with
       beforehand — home-manager refuses to clobber unmanaged files, so this is
       the item most likely to fail
 - [ ] A newly opened login shell is the nix-managed zsh (`echo $SHELL`)
-- [ ] `git config user.email` reports the address set in `flake.nix`
-- [ ] `git push` still authenticates over HTTPS — the `gh` credential helper
+      — **not done.** `just switch-shell` needs a password twice, for `sudo`
+      and `chsh`, so it has to be run by a person. zsh itself was verified
+      under a pty first: it starts clean, and `claude`, `conda` and `sdk` all
+      resolve inside it.
+- [x] `git config user.email` reports the address set in `flake.nix`
+- [x] `git push` still authenticates over HTTPS — the `gh` credential helper
       moved out of an unmanaged `~/.gitconfig` into `programs.gh`, and the
       activation script moves that file aside
-- [ ] `~/.gitconfig.before-home-manager.*` exists, holding what was moved
-- [ ] `command -v claude` still resolves in a fresh shell — `~/.local/bin` was
+- [x] `~/.gitconfig.before-home-manager.*` exists, holding what was moved
+- [x] `command -v claude` still resolves in a fresh shell — `~/.local/bin` was
       reachable only through the `~/.zshrc` that home-manager replaces
-- [ ] `nvim` resolves inside the nix profile (`command -v nvim`)
-- [ ] `nix flake metadata` succeeds with **no** `NIX_CONFIG` set — meaning
+- [x] `nvim` resolves inside the nix profile (`command -v nvim`)
+- [x] `nix flake metadata` succeeds with **no** `NIX_CONFIG` set — meaning
       `~/.config/nix/nix.conf` is now managed
-- [ ] `tool/doctor.sh` exits 0 with no ✗
+- [x] `tool/doctor.sh` exits 0 with no ✗
 
 ## M3 — Experiments, and what they leave behind
 

@@ -69,27 +69,29 @@ pull request.
 
 ## This host
 
-**Flakes are not enabled globally.** Nix was installed with the upstream
-installer, and nothing has written `~/.config/nix/nix.conf` yet, so plain `nix`
-commands fail with *experimental Nix feature 'nix-command' is disabled*.
-`tool/doctor.sh` reports this as a hard ✗, correctly. Until the first
-`home-manager switch` writes that file (`home/nix.nix` manages it), prefix work
-with:
+**This host is activated.** `home-manager switch` ran on 2026-08-03, so
+`~/.config/nix/nix.conf` is managed and flakes work with no `NIX_CONFIG`.
+`gitleaks` and `direnv` arrived with it. `tool/doctor.sh` exits 0 with nothing
+but ✓ — run it rather than trusting this paragraph.
 
-```sh
-export NIX_CONFIG="experimental-features = nix-command flakes"
-```
+**A fresh clone on an unactivated machine is a different story**, and the
+instructions for it have not gone away: before the first switch, plain `nix`
+commands fail with *experimental Nix feature 'nix-command' is disabled*, and so
+does `git push`, because the `pre-push` hook runs `tool/checks/test`. The
+workaround is `export NIX_CONFIG="experimental-features = nix-command flakes"`
+once per shell. Do not hand-write `~/.config/nix/nix.conf` instead —
+home-manager refuses to clobber an unmanaged file, so that turns the first
+switch into a failure.
 
-**This includes `git push`**, which is the surprising part: the `pre-push` hook
-runs `tool/checks/test`, so without that variable the push fails with a Nix
-error rather than anything that looks git-related. Export it once per shell,
-not once per nix command.
+**zsh is installed and configured; whether it is the login shell is a separate
+question.** `just switch-shell` does that, and it needs a password twice —
+`sudo` to register the shell in `/etc/shells`, then `chsh` — so an agent cannot
+run it. Check `echo $SHELL` rather than assuming.
 
-Do not hand-write `~/.config/nix/nix.conf` to silence it — home-manager will
-later refuse to clobber the unmanaged file.
-
-`gitleaks` and `direnv` are not installed here; the doctor warns rather than
-failing, and CI still scans for secrets.
+**`~/.bashrc` is not managed and still holds the conda, SDKMAN and opencode
+hooks it always did.** The same hooks are declared in `home/shell.nix` for zsh.
+Changing one does not change the other, and bash stays a working fallback on
+purpose — if zsh ever fails to start, that is what you land in.
 
 ## Parallel sessions
 

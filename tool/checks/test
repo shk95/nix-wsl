@@ -1,39 +1,35 @@
 #!/bin/sh
-# Two tiers of verification, because they have different reach.
+# Two tiers of verification, because they catch different things.
 #
-#   Tier 1 — eval.  Every configuration, from any host. Nix evaluates a
-#                   configuration for a foreign system perfectly well; it just
-#                   cannot realise one. This catches option typos, type
-#                   errors, module assertions and bad imports — most of what
-#                   actually breaks a config repo.
-#   Tier 2 — build. Only where the target system is this machine. This is the
-#                   part that proves the packages for that platform exist and
-#                   the closure builds.
+#   Tier 1 — eval.  Forces each configuration's toplevel derivation. Catches
+#                   option typos, type errors, module assertions and bad
+#                   imports — most of what actually breaks a config repo.
+#   Tier 2 — build. Realises it, proving the packages exist and the closure
+#                   builds.
 #
-# `nix flake check` is neither: it validates the flake's shape and its standard
-# outputs, and does not look inside homeConfigurations / darwinConfigurations /
-# nixosConfigurations at all. A config repo that runs only `nix flake check` is
-# not checking its configurations.
+# `nix flake check` is neither, and this is the reason the script exists: it
+# validates the flake's shape and its standard outputs, and does not descend
+# into homeConfigurations / nixosConfigurations / darwinConfigurations at all.
+# A green `nix flake check` says nothing about whether your configurations
+# work. Forcing `.drvPath` is what actually evaluates them.
 #
-# What this cannot do is silently drop the gap. It prints a coverage block
-# naming every configuration it could not build and why, plus any change in
-# this branch whose blast radius reaches one of them. Paste that into the pull
-# request — see decisions/003-done-must-be-mechanically-checkable.md, which
-# already requires the body to carry what was *not* verified.
+# Every configuration is assumed to target the machine you run this on — true
+# of a single-host repo, and of WSL work where everything is x86_64-linux. One
+# targeting another system is refused by name rather than half-handled; see
+# the overlay README for what a genuinely multi-host repo needs instead.
 
 set -e
 
 here=$(nix eval --raw --impure --expr 'builtins.currentSystem')
 
 report=$(mktemp)
-warned=$(mktemp)
-trap 'rm -f "$report" "$warned"' EXIT
+trap 'rm -f "$report"' EXIT
 
 nix flake check
 
-# The attribute that forces a real derivation, per flavour. Verified against
-# all three: `pkgs.stdenv.hostPlatform.system` resolves the target system for
-# every one of them, so the system probe below needs no special-casing.
+# The attribute that forces a real derivation, per flavour.
+# `pkgs.stdenv.hostPlatform.system` resolves the target system for all three,
+# so the probe below needs no special-casing.
 toplevel_attr() {
   case $1 in
     homeConfigurations) echo "activationPackage" ;;
@@ -54,115 +50,58 @@ check_flavour() {
     ref=".#$output.\"$name\""
     system=$(nix eval --raw "$ref.pkgs.stdenv.hostPlatform.system" 2>/dev/null || echo "unknown")
 
-    printf '→ eval  %s.%s (%s)\n' "$output" "$name" "$system"
-    if ! nix eval --raw "$ref.$attr.drvPath" >/dev/null; then
-      printf '%s.%s|%s|FAIL|-\n' "$output" "$name" "$system" >> "$report"
+    if [ "$system" != "$here" ]; then
+      printf '%s.%s|%s|FOREIGN\n' "$output" "$name" "$system" >> "$report"
       continue
     fi
 
-    if [ "$system" != "$here" ]; then
-      printf '%s.%s|%s|ok|skipped\n' "$output" "$name" "$system" >> "$report"
+    printf '→ eval  %s.%s\n' "$output" "$name"
+    if ! nix eval --raw "$ref.$attr.drvPath" >/dev/null; then
+      printf '%s.%s|%s|EVAL_FAIL\n' "$output" "$name" "$system" >> "$report"
       continue
     fi
 
     printf '→ build %s.%s\n' "$output" "$name"
     if nix build --no-link "$ref.$attr"; then
-      printf '%s.%s|%s|ok|ok\n' "$output" "$name" "$system" >> "$report"
+      printf '%s.%s|%s|ok\n' "$output" "$name" "$system" >> "$report"
     else
-      printf '%s.%s|%s|ok|FAIL\n' "$output" "$name" "$system" >> "$report"
+      printf '%s.%s|%s|BUILD_FAIL\n' "$output" "$name" "$system" >> "$report"
     fi
   done
 }
 
 check_flavour homeConfigurations
-check_flavour darwinConfigurations
 check_flavour nixosConfigurations
-
-# ---------------------------------------------------------------------------
-# Blast radius: which changes in this branch reach a configuration that was not
-# built here.
-#
-# Deliberately crude — a directory-name rule, not a dependency graph. Anything
-# not obviously platform-specific counts as shared, so a layout this rule has
-# never been taught produces an over-warning rather than false confidence.
-# `home/` is *not* treated as home-manager-only: a home-manager module is
-# routinely imported by nix-darwin and NixOS too, and calling it covered would
-# be exactly the wrong direction to be wrong in.
-# ---------------------------------------------------------------------------
-
-classify() {
-  case $1 in
-    darwin/*|*/darwin/*) echo darwinConfigurations ;;
-    nixos/*|*/nixos/*)   echo nixosConfigurations ;;
-    *)                   echo shared ;;
-  esac
-}
-
-# "cannot work it out" and "worked it out, nothing to report" are different
-# answers and must not print the same line. Telling someone to fetch a branch
-# they already have sends them looking for a problem that is not there.
-integration=${INTEGRATION_BRANCH:-dev}
-if git rev-parse --verify --quiet "origin/$integration" >/dev/null 2>&1; then
-  base_known=yes
-  changed=$(git diff --name-only "origin/$integration...HEAD" -- '*.nix' 'flake.lock' 2>/dev/null || true)
-else
-  base_known=no
-  changed=""
-fi
+check_flavour darwinConfigurations
 
 echo
 echo "── Verification coverage ─────────────────────────────────"
 printf '   host: %s\n\n' "$here"
 
-while IFS='|' read -r target system evaled built; do
-  case "$built" in
-    ok)      note="build ✓" ;;
-    skipped) note="build —  (needs $system)" ;;
-    FAIL)    note="build ✗" ;;
-    *)       note="build ?" ;;
+while IFS='|' read -r target system status; do
+  case "$status" in
+    ok)         line="eval ✓ build ✓" ;;
+    EVAL_FAIL)  line="eval ✗" ;;
+    BUILD_FAIL) line="eval ✓ build ✗" ;;
+    FOREIGN)    line="not attempted — targets $system" ;;
+    *)          line="unknown" ;;
   esac
-  [ "$evaled" = "ok" ] && ev="eval ✓" || ev="eval ✗"
-  printf '   %-38s %-8s %s\n' "$target" "$ev" "$note"
+  printf '   %-38s %s\n' "$target" "$line"
 done < "$report"
-
-# Configurations that were evaluated but not built, and which this branch
-# actually touches. These are the ones to file — see
-# decisions/005-unfinishable-work-becomes-an-issue.md.
-if [ "$base_known" = "no" ]; then
-  printf '\n   · blast radius not computed: no origin/%s to diff against.\n' "$integration"
-  printf '     Fetch it, or state the coverage by hand in the pull request.\n'
-elif [ -z "$changed" ]; then
-  printf '\n   · no .nix or flake.lock changes against origin/%s; nothing to attribute.\n' "$integration"
-else
-  grep '|skipped$' "$report" 2>/dev/null | while IFS='|' read -r target system _ _; do
-    flavour=${target%%.*}
-    hits=$(for f in $changed; do
-             c=$(classify "$f")
-             [ "$c" = "shared" ] || [ "$c" = "$flavour" ] && echo "     $f ($c)"
-           done)
-    [ -n "$hits" ] || continue
-    printf '\n   ! %s was not built here, and this branch changes:\n' "$target"
-    echo "$hits"
-    printf '     Build it on %s, or file it:\n' "$system"
-    # The full system string, not just "darwin": on x86_64-linux an
-    # aarch64-linux configuration is equally unbuildable, and a label saying
-    # "needs-linux" would read as satisfied by the host that just skipped it.
-    printf '       gh issue create --label blocked --label blocked/needs-%s \\\n' "$system"
-    printf '         --title "<what changed>: unbuilt on %s"\n' "$system"
-    echo x >> "$warned"
-  done
-
-  # Say so explicitly when there is nothing to say. This block gets pasted
-  # into a pull request as evidence, and silence cannot be told apart from a
-  # check that never ran — the same failure as the two messages above.
-  [ -s "$warned" ] || printf '\n   · nothing this branch changes reaches a configuration left unbuilt here.\n'
-fi
 echo
 
-# Warnings do not fail the check. A shared module reaching an unbuildable host
-# is the normal case in a multi-host config, and a gate that blocks every such
-# push just teaches people --no-verify. Recording it is the control; the issue
-# and the pull request body are where it is enforced.
+if grep -q 'FOREIGN' "$report"; then
+  cat >&2 <<EOF
+✗ A configuration targets a system other than $here.
+
+  This overlay verifies configurations for the host it runs on. Building for
+  another system needs a builder for it, and deciding which changes still
+  need checking there is a real design question, not a flag — see the
+  overlay README before adding one.
+EOF
+  exit 1
+fi
+
 if grep -q 'FAIL' "$report"; then
   printf '\033[31m✗ A configuration failed to evaluate or build.\033[0m\n' >&2
   exit 1

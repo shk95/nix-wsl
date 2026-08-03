@@ -1,14 +1,15 @@
 # nix-wsl
 
-A deliberately experimental Nix setup: standalone
-[home-manager](https://github.com/nix-community/home-manager) on WSL, with no
-NixOS-WSL and no system layer, seeded from the nix-darwin config at
-[shk95/nix-config](https://github.com/shk95/nix-config).
+A Nix testbed for WSL: standalone
+[home-manager](https://github.com/nix-community/home-manager) with no system
+layer, seeded from the nix-darwin config at
+[shk95/nix-config](https://github.com/shk95/nix-config). NixOS-WSL is the next
+thing to try here; macOS is not in scope, and the checks assume everything
+targets `x86_64-linux`.
 
-It exists to try things and to learn Nix. Its findings are meant to feed a
-later unified configuration covering WSL, macOS and NixOS together, which is
-why `docs/troubleshooting.md` and the decision notes in `docs/status.md` matter
-more here than the configuration itself does.
+It exists to try things and to learn Nix, so `docs/troubleshooting.md` and the
+decision notes in `docs/status.md` matter more here than the configuration
+itself does.
 
 Because there is no system-level module, this works on any WSL distro that has
 Nix installed.

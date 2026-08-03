@@ -1,3 +1,76 @@
+# OS junk — macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# OS junk — Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# OS junk — Linux
+*~
+.directory
+.Trash-*
+.nfs*
+
+# Editors
+*.swp
+*.swo
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# ---------------------------------------------------------------------------
+# Credentials and machine-local configuration.
+#
+# These entries belong here before the first commit rather than after the first
+# mistake: .gitignore only protects files that were never committed, and a
+# secret that reaches history stays there after the file is deleted.
+# ---------------------------------------------------------------------------
+
+# Signing and key material
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+*.mobileprovision
+*.cer
+
+# Environment and local overrides
+.env
+.env.*
+!.env.example
+*.local
+
+# Agent tooling — shared settings are committed, machine-local ones are not
+.claude/settings.local.json
+.claude/.cc-writes/
+
+# ---------------------------------------------------------------------------
+# Nix
+# ---------------------------------------------------------------------------
+
+# Build results
 result
 result-*
+
+# direnv's cache
 .direnv/
+
+# flake.lock is NOT ignored. It is the actual pin — reproducibility is the
+# point of this repository, and one that ignores its lock file has none.

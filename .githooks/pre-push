@@ -1,0 +1,20 @@
+#!/bin/sh
+#
+# Keeps a failing test suite from reaching the remote, where it becomes
+# everyone else's problem.
+#
+# Delegates to tool/checks/test, which the project supplies. Skipped when that
+# does not exist.
+#
+# Bypass with `git push --no-verify` when pushing work in progress on purpose.
+
+set -e
+
+script="tool/checks/test"
+[ -x "$script" ] || exit 0
+
+printf '→ test\n'
+"$script" || {
+  printf '\033[31m✗ Tests failed. Push blocked.\033[0m\n' >&2
+  exit 1
+}

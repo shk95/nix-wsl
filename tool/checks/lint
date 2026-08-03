@@ -1,0 +1,11 @@
+#!/bin/sh
+# Static analysis: statix for common Nix anti-patterns, deadnix for unused
+# bindings. Both are fetched via `nix run` rather than assumed to be on PATH,
+# so this works with nothing installed beyond Nix itself.
+#
+# deadnix's default exit code is 0 regardless of what it finds — --fail is
+# required, or this check passes silently on real dead code.
+
+set -e
+nix run nixpkgs#statix -- check .
+nix run nixpkgs#deadnix -- --fail .

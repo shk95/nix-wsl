@@ -1,0 +1,9 @@
+#!/bin/sh
+# Formatting check. Called by the pre-commit hook and by CI.
+#
+# Delegates to the flake's own `formatter.<system>` output (alejandra by
+# default) rather than hardcoding a tool here, so the choice lives in one
+# place: flake.nix. Assumes that formatter accepts --check, as alejandra does.
+
+set -e
+nix fmt -- --check .

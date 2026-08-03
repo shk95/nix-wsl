@@ -15,12 +15,19 @@
     # already hashed, so the block would start appending unhashed entries to a
     # hashed file. Declaring one host alias should not change how ssh behaves
     # everywhere else.
+    #
+    # home-manager documents this option as heading for deprecation; when it
+    # goes, the replacement is to declare settings."*" explicitly rather than
+    # to accept the block.
     enableDefaultConfig = false;
 
-    matchBlocks.local = {
-      hostname = "localhost";
-      identityFile = "~/.ssh/id_ed25519";
-      inherit user;
+    # `settings` rather than `matchBlocks`, which is deprecated and warns on
+    # every activation. The keys are upstream OpenSSH directive names, not the
+    # camelCase the old option used.
+    settings.local = {
+      HostName = "localhost";
+      User = user;
+      IdentityFile = "~/.ssh/id_ed25519";
     };
   };
 }

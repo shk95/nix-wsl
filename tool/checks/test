@@ -26,7 +26,8 @@ set -e
 here=$(nix eval --raw --impure --expr 'builtins.currentSystem')
 
 report=$(mktemp)
-trap 'rm -f "$report"' EXIT
+warned=$(mktemp)
+trap 'rm -f "$report" "$warned"' EXIT
 
 nix flake check
 
@@ -148,7 +149,13 @@ else
     # "needs-linux" would read as satisfied by the host that just skipped it.
     printf '       gh issue create --label blocked --label blocked/needs-%s \\\n' "$system"
     printf '         --title "<what changed>: unbuilt on %s"\n' "$system"
+    echo x >> "$warned"
   done
+
+  # Say so explicitly when there is nothing to say. This block gets pasted
+  # into a pull request as evidence, and silence cannot be told apart from a
+  # check that never ran — the same failure as the two messages above.
+  [ -s "$warned" ] || printf '\n   · nothing this branch changes reaches a configuration left unbuilt here.\n'
 fi
 echo
 

@@ -8,8 +8,8 @@
     jq
     yq-go
 
-    # git tooling beyond programs.git
-    gh
+    # git tooling beyond programs.git — gh is programs/gh.nix, which also
+    # generates the credential helper
     tig
 
     # archives

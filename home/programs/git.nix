@@ -5,9 +5,19 @@
   ...
 }: {
   # `programs.git` generates ~/.config/git/config; for it to take effect,
-  # ~/.gitconfig must not exist (git prefers it over the XDG path).
-  home.activation.removeExistingGitconfig = lib.hm.dag.entryBefore ["checkLinkTargets"] ''
-    rm -f ~/.gitconfig
+  # ~/.gitconfig must not exist (git reads both, and the later one wins).
+  #
+  # Moved rather than deleted. home-manager refuses to clobber unmanaged files
+  # everywhere else, and this activation script is the one place that escapes
+  # that rule — the file it removes is exactly the kind nobody has a copy of.
+  # The inventory before M2 found a gh credential helper in it that nothing
+  # here reproduced; the next surprise will not be caught by reading.
+  home.activation.backupExistingGitconfig = lib.hm.dag.entryBefore ["checkLinkTargets"] ''
+    if [ -e "$HOME/.gitconfig" ]; then
+      backup="$HOME/.gitconfig.before-home-manager.$(date +%Y%m%d%H%M%S)"
+      run mv $VERBOSE_ARG "$HOME/.gitconfig" "$backup"
+      echo "Moved an unmanaged ~/.gitconfig to $backup"
+    fi
   '';
 
   programs = {
@@ -26,6 +36,10 @@
           name = gitname;
           email = gitmail;
         };
+
+        # Carried over from the unmanaged ~/.gitconfig this replaces: without
+        # it git escapes non-ASCII paths as octal in status and diff output.
+        core.quotepath = false;
 
         init.defaultBranch = "master";
         push.autoSetupRemote = true;

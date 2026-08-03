@@ -29,11 +29,32 @@ fi
 # cannot tell you whether nix-command is enabled. Asking the flake in this
 # repository to resolve its own metadata tests both flags at once, the way
 # every other command here actually needs them.
-if nix flake metadata --no-write-lock-file >/dev/null 2>&1; then
+#
+# The error is kept rather than discarded. Every other way this probe can fail
+# — no network, an untracked flake.nix, a read-only ~/.cache/nix — used to be
+# reported as "flakes are not enabled", which sends you to export a variable
+# that cannot help. Not knowing is its own answer, and it stays a ✗ because the
+# question being asked is whether this machine can build.
+if err=$(nix flake metadata --no-write-lock-file 2>&1 >/dev/null); then
   ok "nix-command and flakes enabled"
 else
-  bad "nix-command/flakes not enabled by default" \
-      'export NIX_CONFIG="experimental-features = nix-command flakes" until the first home-manager switch writes it for you (see home/nix.nix)'
+  case "$err" in
+    *"experimental Nix feature"*)
+      bad "nix-command/flakes not enabled by default" \
+          'export NIX_CONFIG="experimental-features = nix-command flakes" until the first home-manager switch writes it for you (see home/nix.nix)'
+      ;;
+    *)
+      # nix prints a chain, opening with a bare "error:" and putting the root
+      # cause last — so the last non-empty line is the one worth showing.
+      detail=$(printf '%s\n' "$err" \
+               | grep -v '^[[:space:]]*$' \
+               | tail -1 \
+               | sed 's/^[[:space:]]*//' \
+               | cut -c1-200)
+      bad "could not ask the flake whether nix-command works" \
+          "Not the experimental-features flag, so exporting NIX_CONFIG will not help. $detail"
+      ;;
+  esac
 fi
 
 command -v direnv >/dev/null 2>&1 && ok "direnv" \

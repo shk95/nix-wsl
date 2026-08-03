@@ -143,6 +143,20 @@ standalone installs that overlap `packages.nix` (`bat`). Appending from
 reading the built `hm-session-vars.sh`, not by trusting the option's name; the
 first version of that change was committed to the opposite belief.
 
+**The doctor reported a blocked probe as a disabled feature.** `tool/doctor.sh`
+asks the flake for its own metadata, which is a good probe — it exercises both
+experimental flags the way real commands do. But it discarded the error and
+treated *every* failure as "flakes are not enabled", so a read-only
+`~/.cache/nix` produced a ✗ telling you to export a variable that could not
+help. Found by control experiment: identical command, identical commit,
+identical `NIX_CONFIG`, opposite verdicts inside and outside an agent sandbox.
+
+This is the third instance of one shape in this repository — **treating "could
+not compute" as an answer**, after `tool/checks/test` did it twice. Worth
+naming, because the next one will not look like either of them. The rule that
+falls out: when a check cannot run, say that, and never let the fallback be one
+of the real verdicts.
+
 **`pre-push` ran the whole suite to delete a branch.** Deleting the first
 merged branch was blocked by a test run that could not tell it apart from a
 push of new commits. Nothing a deletion does can fail a test, and on this host

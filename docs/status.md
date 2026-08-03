@@ -17,7 +17,10 @@ Repository setup, 2026-08-03: `dev` is the default branch, `master` is
 protected and requires both `Secret scan` and `Format, lint, eval and build` —
 names taken from what a real run reported, not guessed, since a required check
 whose name does not match blocks every merge waiting for something that never
-arrives. The blocked labels are `needs-manual-check` and `needs-nixos-host`.
+arrives. The blocked labels are `blocked/needs-manual-check` and
+`blocked/needs-nixos-host` — with the prefix, which is not decoration: an issue
+is filed with `blocked` *and* one of these, and GitHub matches label names
+exactly, so dropping the prefix files against a label that does not exist.
 
 ```
 $ tool/checks/test
@@ -61,6 +64,10 @@ and does not require replacing the distro. The cost is that nothing
 system-level can be declared here — no services, no system packages. Reversing
 it means adopting NixOS-WSL and rewriting the entry point, so the decision is
 worth revisiting only if something genuinely system-level is needed.
+
+That sentence has been read as "trying NixOS-WSL is a one-way door", and it is
+not — the entry point is the flake's, not the machine's. See **The next
+experiment** below, where the difference is measured rather than assumed.
 
 **The unix account and the git identity are separate variables.** `user =
 "user1"` is the login on this host; `gitname = "shk"` is the commit author.
@@ -272,6 +279,76 @@ When stuck, grep it for the error text rather than reading it.
 
 ---
 
+## The next experiment: NixOS-WSL
+
+Groundwork done 2026-08-04. No code yet, deliberately — the numbers below
+change what the experiment should look like, and they were cheaper to get than
+to undo.
+
+**What it is for.** Whether a system layer earns its place here at all: services
+and system packages are the things standalone home-manager cannot declare, and
+this repo has never needed one badly enough to find out. The second question is
+whether the two-tier checks survive a repository with more than one flavour in
+it, which they have never had.
+
+**What is already in place**, verified rather than assumed:
+
+- `tool/doctor.sh` already branches on `nixosConfigurations`, and on a non-NixOS
+  host warns *build here, but not switch* — which is exactly this machine.
+- `tool/checks/test` already calls `check_flavour nixosConfigurations`, and both
+  of its probes work against a real NixOS-WSL configuration: the system probe
+  returns `x86_64-linux`, so the FOREIGN guard behaves, and
+  `config.system.build.toplevel.drvPath` evaluates. This closes the
+  "**Not verified:** `nixosConfigurations`" caveat in the overlay README for
+  tier 1.
+- The `blocked/needs-nixos-host` label exists for the activation half.
+
+**What it costs, and the decision that forces.** A *minimal* NixOS-WSL toplevel
+— `wsl.enable`, a default user, a `stateVersion`, nothing else:
+
+```
+these 169 derivations will be built
+these 255 paths will be fetched (615.5 MiB download, 2.2 GiB unpacked)
+```
+
+`tool/checks/test` builds every configuration that targets this host, and both
+`pre-push` and CI run it. Locally the store amortises that after the first
+time. **CI does not** — it starts from nothing every run, which is the point of
+it, and this overlay ships no binary cache on purpose (`magic-nix-cache-action`
+needs a FlakeHub account, and measured at 6m39s against 1m23s without). So a
+`nixosConfigurations` entry on `dev` turns a ninety-second CI run into a
+600 MiB download on every pull request, for a configuration nothing can
+activate from here.
+
+That is the question to settle before writing any of it: does the entry live on
+`dev`, or on a long-lived experiment branch until it has earned the cost? A
+third option is that `tool/checks/test` learns to evaluate a flavour without
+building it — but that weakens the two-tier model deliberately, and weakening
+it needs its own decision rather than being a side effect of an experiment.
+
+**Reversibility, measured.** NixOS-WSL is installed with `wsl --import`, which
+registers a *new* distribution; it does not convert or replace an existing one.
+This machine currently has:
+
+```
+$ wsl.exe --list --verbose
+* Ubuntu-26.04      Running    2
+  docker-desktop    Stopped    2
+```
+
+The experiment adds a third entry. `Ubuntu-26.04` — where this repository, the
+activated home-manager generation and the login shell all live — is untouched
+and keeps running throughout, and rollback is `wsl --unregister <name>`. The
+machine-side risk is genuinely low; the repository-side cost above is the real
+constraint, and they should not be confused for each other.
+
+**Input hygiene.** NixOS-WSL pins its own nixpkgs (`e7a3ca8`, 2026-07-11),
+which is not ours. Without `inputs.nixos-wsl.inputs.nixpkgs.follows = "nixpkgs"`
+the flake evaluates two of them. The probe above used `follows` and the
+configuration evaluated clean, so there is no known reason to carry a second.
+
+---
+
 ## Next
 
 **M2 is closed.** `just switch-shell` ran on 2026-08-04 — it needs a password
@@ -290,9 +367,15 @@ coverage block pasted into every pull request. The fix is the one in
 `troubleshooting.md` — pin the option or bump `stateVersion` — and it was left
 out of the M2 merge rather than folded into an unrelated change.
 
-Then M3. `gitleaks` arrived with M2 as predicted, so the secret scan now runs
-locally as well as in CI; the M3 secrets experiment no longer starts from a
-gap. NixOS-WSL is the other one waiting.
+**M3 is open, and NixOS-WSL is the first experiment.** Its groundwork is the
+section above; the one thing to decide before any code is where a
+`nixosConfigurations` entry lives, given what it does to CI. `gitleaks` arrived
+with M2 as predicted, so the secret scan now runs locally as well as in CI and
+the other waiting experiment — secrets management — no longer starts from a
+gap.
+
+**A standing chore, not a milestone:** re-run the M1 clone verification whenever
+the files it exercises change. It went stale in a day and nothing flagged it.
 
 ---
 

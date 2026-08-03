@@ -48,14 +48,19 @@ finds, since GitHub matches labels exactly — plus one saying what is missing.
 Verification here means a fresh clone in a scratch directory, followed in
 order, using nothing the current machine happens to have.
 
-- [ ] The clone lands on `dev`, with `CLAUDE.md`, `tool/` and `docs/` present
-- [ ] `tool/doctor.sh` fails on the unset hooks path and prints the exact
+Done on 2026-08-03. The clone found a real defect — step 4 of `README.md` told
+the reader to run `just bootstrap` when `just` is one of the packages the
+bootstrap installs — which is the entire argument for doing this rather than
+reasoning about it.
+
+- [x] The clone lands on `dev`, with `CLAUDE.md`, `tool/` and `docs/` present
+- [x] `tool/doctor.sh` fails on the unset hooks path and prints the exact
       command to fix it
-- [ ] A deliberately malformed commit message is rejected by `commit-msg`
-- [ ] `tool/worktree.sh new` **and `done`** both work — `done` is the path that
+- [x] A deliberately malformed commit message is rejected by `commit-msg`
+- [x] `tool/worktree.sh new` **and `done`** both work — `done` is the path that
       never gets exercised during development
-- [ ] `tool/checks/format`, `lint` and `test` all pass from inside the clone
-- [ ] The CI workflow has been watched passing on a real push, not assumed
+- [x] `tool/checks/format`, `lint` and `test` all pass from inside the clone
+- [x] The CI workflow has been watched passing on a real push, not assumed
 
 ## M2 — Activated on this host
 

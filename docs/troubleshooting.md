@@ -100,6 +100,17 @@ Two consequences worth knowing before you go looking:
   cannot arrive — and the branch protection settings look perfectly correct
   while it happens.
 
+### `tool/doctor.sh`: `could not ask the flake whether nix-command works`
+
+The doctor could not run `nix flake metadata`, and the failure was *not* the
+experimental-features flag — so exporting `NIX_CONFIG` will not clear it. The
+rest of the line is the root cause nix reported; act on that.
+
+Seen so far: a read-only `~/.cache/nix` (agent sandboxes deny it), no network,
+and an untracked `flake.nix`. Each of these used to be reported as
+"nix-command/flakes not enabled by default", which sent you to a variable that
+could not help.
+
 ### `git push` fails with the same `nix-command is disabled` message
 
 Not a git problem, and nothing in the output says a hook ran. `pre-push`

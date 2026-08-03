@@ -67,22 +67,30 @@ reasoning about it.
 Deliberately deferred until now; everything above was verified by building
 rather than switching. These are the items a build cannot establish.
 
-- [ ] `home-manager switch --flake .#user1` completes without error
-- [ ] Existing `~/.zshrc`, `~/.gitconfig` and similar were dealt with
+Activated 2026-08-03; nine of the ten below were verified the same day. The
+login shell needed a person and was switched on 2026-08-04, which closes M2.
+
+- [x] `home-manager switch --flake .#user1` completes without error
+- [x] Existing `~/.zshrc`, `~/.gitconfig` and similar were dealt with
       beforehand — home-manager refuses to clobber unmanaged files, so this is
       the item most likely to fail
-- [ ] A newly opened login shell is the nix-managed zsh (`echo $SHELL`)
-- [ ] `git config user.email` reports the address set in `flake.nix`
-- [ ] `git push` still authenticates over HTTPS — the `gh` credential helper
+- [x] A newly opened login shell is the nix-managed zsh (`echo $SHELL`)
+      — `just switch-shell` needs a password twice, for `sudo` and `chsh`, so
+      a person ran it on 2026-08-04. Checked afterwards in a clean login shell
+      (`env -i` under a pty, so nothing was inherited): `~/.local/bin` and
+      `~/.opencode/bin` are appended rather than prepended, `LANG` and
+      `locale charmap` are UTF-8, and `conda` and `sdk` load as functions.
+- [x] `git config user.email` reports the address set in `flake.nix`
+- [x] `git push` still authenticates over HTTPS — the `gh` credential helper
       moved out of an unmanaged `~/.gitconfig` into `programs.gh`, and the
       activation script moves that file aside
-- [ ] `~/.gitconfig.before-home-manager.*` exists, holding what was moved
-- [ ] `command -v claude` still resolves in a fresh shell — `~/.local/bin` was
+- [x] `~/.gitconfig.before-home-manager.*` exists, holding what was moved
+- [x] `command -v claude` still resolves in a fresh shell — `~/.local/bin` was
       reachable only through the `~/.zshrc` that home-manager replaces
-- [ ] `nvim` resolves inside the nix profile (`command -v nvim`)
-- [ ] `nix flake metadata` succeeds with **no** `NIX_CONFIG` set — meaning
+- [x] `nvim` resolves inside the nix profile (`command -v nvim`)
+- [x] `nix flake metadata` succeeds with **no** `NIX_CONFIG` set — meaning
       `~/.config/nix/nix.conf` is now managed
-- [ ] `tool/doctor.sh` exits 0 with no ✗
+- [x] `tool/doctor.sh` exits 0 with no ✗
 
 ## M3 — Experiments, and what they leave behind
 

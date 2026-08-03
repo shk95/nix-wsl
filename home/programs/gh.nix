@@ -10,6 +10,13 @@ _: {
   programs.gh = {
     enable = true;
 
+    settings.aliases = {
+      # Was in an unmanaged ~/.config/gh/config.yml, which this file replaces.
+      # home-manager writes `aliases: {}` when nothing is declared, so leaving
+      # it out is not neutral — it deletes the alias.
+      co = "pr checkout";
+    };
+
     gitCredentialHelper = {
       enable = true;
       hosts = [

@@ -12,6 +12,10 @@
     # generates the credential helper
     tig
 
+    # the pre-commit hook's secret scan is a no-op without this, and on a
+    # public repository CI only catches a leak after it is already published
+    gitleaks
+
     # archives
     unzip
     zip

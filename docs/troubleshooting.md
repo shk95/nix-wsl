@@ -57,9 +57,14 @@ command aborts instead of adding the files you actually meant.
 
 ### `experimental Nix feature 'nix-command' is disabled`
 
-This host has no `~/.config/nix/nix.conf` yet. See the **This host** section of
-`CLAUDE.md`: export `NIX_CONFIG="experimental-features = nix-command flakes"`
-rather than writing the file, which home-manager will later refuse to clobber.
+There is no `~/.config/nix/nix.conf` yet, which is the state of any machine
+before its first `home-manager switch` — `home/nix.nix` is what writes it.
+Export `NIX_CONFIG="experimental-features = nix-command flakes"` for the
+session rather than writing the file by hand: home-manager refuses to clobber
+an unmanaged file, so hand-writing it turns the first switch into a failure.
+
+This host passed that point on 2026-08-03 and no longer needs the variable. The
+entry stays because a fresh clone on a new machine starts where this one did.
 
 Note that `nix config show` cannot diagnose this — it needs `nix-command` in
 order to run at all. `tool/doctor.sh` probes with `nix flake metadata` instead,
@@ -133,3 +138,55 @@ explicitly (keeps the old behaviour, silences the warning) or bump
 `stateVersion` deliberately after reading the home-manager release notes for
 what else changes with it — pinning is the lower-risk fix in the middle of
 unrelated work.
+
+---
+
+## The agent sandbox
+
+Everything here has one cause: an agent's shell tool runs inside a mount
+namespace that bind-mounts over the paths it is not allowed to touch. What the
+agent sees is real *inside that namespace* and absent everywhere else, so these
+symptoms cannot be reproduced by a person in a terminal — which is exactly why
+they waste time.
+
+**The test that settles all of them is the same:** run the command again
+outside the sandbox and compare. If the two disagree, the sandbox is the
+subject, not the repository.
+
+### `error: <file>: can only add regular files, symbolic links or git-directories`
+
+Followed by `fatal: adding files failed`, and usually met while running
+`git add -N .` before a flake build (see *`Path 'flake.nix' ... is not tracked
+by Git`* above).
+
+The named file is a bind-mounted `/dev/null`, not anything on disk. `ls -l`
+gives it away:
+
+```
+crw-rw-rw- 1 nobody nogroup 1, 3 .bashrc
+```
+
+`c` for character device, `1, 3` being `/dev/null`, `nobody nogroup` being the
+user namespace showing through. Whole families of them appear at once, sharing
+one mtime to the nanosecond. Nothing was created in the repository and there is
+nothing to clean up.
+
+### `git status` lists dotfiles nobody put there
+
+`.bashrc`, `.zshrc`, `.zprofile`, `.gitconfig`, `.idea`, `.vscode`, `.mcp.json`
+and similar, all untracked, in a repository that has never contained them. Same
+cause as the entry above: the agent's deny-list is mostly named after home
+directory and editor files, and each denied path that does not exist becomes a
+device node inside the namespace.
+
+`git status` **exits 0 here.** It is not failing; it is answering truthfully
+about a filesystem that only it can see. That is what makes this worse than a
+probe that errors — see *A green `git status` described a filesystem nobody
+had* in `docs/status.md`.
+
+### `warning: unable to access '<repo>/.gitmodules': Permission denied`
+
+Emitted by git commands that otherwise succeed — `git fetch` and `git status`
+print it and then work correctly. The path is read-only inside the namespace.
+Harmless, and not a sign of a damaged repository or a permissions problem in
+`$HOME`.

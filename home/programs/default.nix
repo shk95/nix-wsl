@@ -6,6 +6,7 @@ _: {
     ./eza.nix
     ./neovim.nix
     ./skim.nix
+    ./ssh.nix
     ./yazi.nix
   ];
 }

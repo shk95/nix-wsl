@@ -29,6 +29,11 @@
         ".direnv"
         ".envrc"
         "*.pem"
+
+        # Carried over from an unmanaged ~/.config/git/ignore, which
+        # programs.git generates and would otherwise have replaced wholesale.
+        "**/.claude/settings.local.json"
+        "**/.claude/.cc-writes/"
       ];
 
       settings = {

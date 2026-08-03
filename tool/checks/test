@@ -97,8 +97,17 @@ classify() {
   esac
 }
 
+# "cannot work it out" and "worked it out, nothing to report" are different
+# answers and must not print the same line. Telling someone to fetch a branch
+# they already have sends them looking for a problem that is not there.
 integration=${INTEGRATION_BRANCH:-dev}
-changed=$(git diff --name-only "origin/$integration...HEAD" -- '*.nix' 'flake.lock' 2>/dev/null || true)
+if git rev-parse --verify --quiet "origin/$integration" >/dev/null 2>&1; then
+  base_known=yes
+  changed=$(git diff --name-only "origin/$integration...HEAD" -- '*.nix' 'flake.lock' 2>/dev/null || true)
+else
+  base_known=no
+  changed=""
+fi
 
 echo
 echo "── Verification coverage ─────────────────────────────────"
@@ -118,9 +127,11 @@ done < "$report"
 # Configurations that were evaluated but not built, and which this branch
 # actually touches. These are the ones to file — see
 # decisions/005-unfinishable-work-becomes-an-issue.md.
-if [ -z "$changed" ]; then
+if [ "$base_known" = "no" ]; then
   printf '\n   · blast radius not computed: no origin/%s to diff against.\n' "$integration"
   printf '     Fetch it, or state the coverage by hand in the pull request.\n'
+elif [ -z "$changed" ]; then
+  printf '\n   · no .nix or flake.lock changes against origin/%s; nothing to attribute.\n' "$integration"
 else
   grep '|skipped$' "$report" 2>/dev/null | while IFS='|' read -r target system _ _; do
     flavour=${target%%.*}

@@ -39,14 +39,20 @@ It reports what is missing and how to fix each item. On a host where flakes are
 not enabled globally it fails with a ✗ and prints the workaround — that is
 correct, not a bug.
 
-**4. Bootstrap home-manager.** Only needed the first time, before the
-`home-manager` command exists:
+**4. Bootstrap home-manager.** Only needed the first time. Note that this is
+not `just bootstrap`: `just` is one of the packages this configuration
+installs, so on a fresh machine it is no more present than `home-manager` is.
 
 ```sh
-just bootstrap
+nix run home-manager/master -- switch --flake .#user1
 ```
 
-From then on, `just switch`.
+That is exactly what the `bootstrap` recipe runs. Once it finishes both
+`home-manager` and `just` are on `PATH`, and everything below works — from
+then on, `just switch`.
+
+If you would rather not activate anything yet, `nix develop` gives you a shell
+with `just` and the Nix tooling in it, without touching `$HOME`.
 
 Note that activation is a deliberate act here, not part of routine work — see
 the rules in [`CLAUDE.md`](CLAUDE.md).

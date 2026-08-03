@@ -87,6 +87,15 @@ left unused.
 
 ## Bugs worth remembering
 
+**The setup instructions opened with a command the reader could not run.**
+Step 4 said `just bootstrap`, but `just` is one of the packages the bootstrap
+installs, so a fresh machine gets `just: command not found` on the first thing
+the README asks for. Found by the clone verification, not by reading — the
+machine that wrote the instructions was assumed to have the tool, and in fact
+did not have it either. The README now gives the underlying `nix run` command,
+and `just` was added to the devShell so `nix develop` is a working entry point
+before anything is activated.
+
 **`nix flake check` passing on a broken configuration.** Found while bringing
 the flake up: the missing `nix.package` assertion did not fire until the
 toplevel derivation was forced. This is what produced the two-tier design

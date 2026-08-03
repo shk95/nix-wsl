@@ -34,9 +34,11 @@
       modules = [./home];
     };
 
-    # `nix develop` gives you a shell with everything needed to edit this flake
+    # `nix develop` gives you a shell with everything needed to edit this
+    # flake. `just` is in here as well as in home.packages, so the command
+    # runner is available before anything has been activated.
     devShells.${system}.default = pkgs.mkShell {
-      packages = with pkgs; [alejandra nixd statix deadnix];
+      packages = with pkgs; [just alejandra nixd statix deadnix];
     };
 
     formatter.${system} = pkgs.alejandra;

@@ -72,6 +72,11 @@ with:
 export NIX_CONFIG="experimental-features = nix-command flakes"
 ```
 
+**This includes `git push`**, which is the surprising part: the `pre-push` hook
+runs `tool/checks/test`, so without that variable the push fails with a Nix
+error rather than anything that looks git-related. Export it once per shell,
+not once per nix command.
+
 Do not hand-write `~/.config/nix/nix.conf` to silence it — home-manager will
 later refuse to clobber the unmanaged file.
 

@@ -9,9 +9,16 @@ Last updated: 2026-08-03.
 | Milestone | State |
 | --- | --- |
 | M0 — The flake builds reproducibly | done |
-| M1 — Scaffold conventions applied and verified by cloning | **next** — applied, clone verification outstanding |
+| M1 — Scaffold conventions applied and verified by cloning | **next** — applied and the repository is set up; clone verification and a watched CI run outstanding |
 | M2 — Activated on this host | not started, deliberately |
 | M3 — Experiments feeding the unified repository | ongoing |
+
+Repository setup, 2026-08-03: `dev` is the default branch, `master` is
+protected, and the blocked labels are `needs-manual-check`,
+`needs-aarch64-darwin` and `needs-nixos-host`. `master`'s only required status
+check is `Secret scan` so far; the build job should be added once a real run
+has reported its exact name, since a required check whose name does not match
+blocks every merge waiting for something that never arrives.
 
 ```
 $ export NIX_CONFIG="experimental-features = nix-command flakes"   # see CLAUDE.md

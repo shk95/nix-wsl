@@ -65,6 +65,14 @@ Note that `nix config show` cannot diagnose this — it needs `nix-command` in
 order to run at all. `tool/doctor.sh` probes with `nix flake metadata` instead,
 which exercises both flags the way real commands do.
 
+### `git push` fails with the same `nix-command is disabled` message
+
+Not a git problem, and nothing in the output says a hook ran. `pre-push`
+invokes `tool/checks/test`, which is a Nix command, so on a host where flakes
+are not enabled globally the push dies with a Nix error. Export `NIX_CONFIG` in
+the shell you push from. `--no-verify` also gets the push through, but skips
+the tests, which is the thing the hook is for.
+
 ### `a 'aarch64-darwin' with features {} is required to build ..., but I am a 'x86_64-linux'`
 
 Seen while *evaluating* — not building — a configuration for another system.

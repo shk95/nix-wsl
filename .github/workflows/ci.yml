@@ -45,8 +45,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      # No binary cache action here on purpose.
+      # DeterminateSystems/magic-nix-cache-action now requires a FlakeHub
+      # account: without one it caches nothing and still writes an
+      # error-level annotation onto every run, so a green build carries a
+      # permanent red mark. An error that is always present is one nobody
+      # reads, and it costs the next person the time it takes to prove it is
+      # benign. If builds here get slow enough to matter, register with
+      # FlakeHub and add it back, or use cachix/cachix-action — but add a
+      # cache deliberately rather than carrying a broken one.
       - uses: DeterminateSystems/nix-installer-action@main
-      - uses: DeterminateSystems/magic-nix-cache-action@main
 
       - run: tool/checks/format
       - run: tool/checks/lint

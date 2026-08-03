@@ -9,16 +9,16 @@ Last updated: 2026-08-03.
 | Milestone | State |
 | --- | --- |
 | M0 — The flake builds reproducibly | done |
-| M1 — Scaffold conventions applied and verified by cloning | **next** — applied and the repository is set up; clone verification and a watched CI run outstanding |
-| M2 — Activated on this host | not started, deliberately |
+| M1 — Scaffold conventions applied and verified by cloning | done |
+| M2 — Activated on this host | **next** — not started, deliberately |
 | M3 — Experiments feeding the unified repository | ongoing |
 
 Repository setup, 2026-08-03: `dev` is the default branch, `master` is
-protected, and the blocked labels are `needs-manual-check`,
-`needs-aarch64-darwin` and `needs-nixos-host`. `master`'s only required status
-check is `Secret scan` so far; the build job should be added once a real run
-has reported its exact name, since a required check whose name does not match
-blocks every merge waiting for something that never arrives.
+protected and requires both `Secret scan` and `Format, lint, eval and build` —
+names taken from what a real run reported, not guessed, since a required check
+whose name does not match blocks every merge waiting for something that never
+arrives. The blocked labels are `needs-manual-check`, `needs-aarch64-darwin`
+and `needs-nixos-host`.
 
 ```
 $ export NIX_CONFIG="experimental-features = nix-command flakes"   # see CLAUDE.md
@@ -27,6 +27,8 @@ $ tool/checks/test
    host: x86_64-linux
 
    homeConfigurations.user1               eval ✓ build ✓
+
+   · nothing this branch changes reaches a configuration left unbuilt here.
 ```
 
 ---
@@ -102,6 +104,15 @@ toplevel derivation was forced. This is what produced the two-tier design
 above, and the reason `tool/checks/test` evaluates `.drvPath` explicitly rather
 than trusting `nix flake check`.
 
+**`pre-push` ran the whole suite to delete a branch.** Deleting the first
+merged branch was blocked by a test run that could not tell it apart from a
+push of new commits. Nothing a deletion does can fail a test, and on this host
+— where the suite needs `NIX_CONFIG` — it meant branch cleanup was impossible
+without `--no-verify`, which is the habit least worth teaching. The hook now
+reads the refs git hands it on stdin and skips when all of them are deletions.
+Fixed upstream in project-scaffold's core as well; both were found here, on the
+first tidy-up after a merge.
+
 ---
 
 ## Traps that will recur
@@ -116,15 +127,23 @@ When stuck, grep it for the error text rather than reading it.
 
 ## Next
 
-M1's remaining item is the clone verification, and it is the one that finds
-things — see `decisions/006` in project-scaffold for why. Clone this repository
-into a scratch directory, follow `README.md` in order using nothing this
-machine happens to have, and work through the M1 checklist in
-`definition-of-done.md`.
-
-After that, M2. Before running `home-manager switch`, inventory what already
+M2, activation. Before running `home-manager switch`, inventory what already
 exists in `$HOME` that home-manager will want to own — `~/.zshrc`,
-`~/.gitconfig`, `~/.config/nix/nix.conf` — because that is where it will fail.
+`~/.gitconfig`, `~/.config/nix/nix.conf` — because that is where it will fail,
+and it fails part-way rather than cleanly. Deal with those first, then work
+the M2 list in `definition-of-done.md`; `tool/doctor.sh` exiting 0 with no ✗ is
+the item that confirms the rest.
+
+Two things left over from M1, neither blocking:
+
+- The blast-radius warning in `tool/checks/test` has only ever been exercised
+  against a synthetic two-flavour repository. It stays unproven in real use
+  until this repo, or the unified one, actually declares a configuration this
+  host cannot build.
+- `gitleaks` is not installed here, so the pre-commit secret scan has never
+  run locally on this repository. CI's `Secret scan` job has covered every
+  push so far, which is the backstop working as designed rather than a reason
+  to leave it uninstalled.
 
 ---
 

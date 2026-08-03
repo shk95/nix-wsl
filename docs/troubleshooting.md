@@ -65,6 +65,36 @@ Note that `nix config show` cannot diagnose this — it needs `nix-command` in
 order to run at all. `tool/doctor.sh` probes with `nix flake metadata` instead,
 which exercises both flags the way real commands do.
 
+### GitHub Actions never runs, and every API check says it is enabled
+
+A new repository can have Actions switched off in a way nothing visible
+reports. Everything that looks like a diagnostic lies:
+
+```
+$ gh api repos/<owner>/<repo>/actions/permissions
+{"enabled":true,"allowed_actions":"all","sha_pinning_required":false}
+$ gh api repos/<owner>/<repo>/actions/workflows -q '.workflows[].state'
+active
+```
+
+Both were byte-identical to a repository where Actions worked. The only
+signal is negative — `gh api repos/<owner>/<repo>/actions/runs -q .total_count`
+stays at `0` no matter what you push. Fix it in **Settings → Actions** in the
+web UI.
+
+Two consequences worth knowing before you go looking:
+
+- **Enabling does not replay missed events.** Pushes and pull requests that
+  happened while it was off are gone; you need a fresh event. Pushing to an
+  open pull request's head branch is the cheapest one, since it fires
+  `pull_request: synchronize` even when the branch itself is not in the
+  workflow's `push` filter.
+- **It interacts badly with branch protection.** `setup-repo.sh` makes the
+  release branch require the `Secret scan` check. With Actions off that check
+  never reports, so every pull request into it waits forever on something that
+  cannot arrive — and the branch protection settings look perfectly correct
+  while it happens.
+
 ### `git push` fails with the same `nix-command is disabled` message
 
 Not a git problem, and nothing in the output says a hook ran. `pre-push`

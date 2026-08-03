@@ -1,6 +1,6 @@
 # Status and handover notes
 
-Last updated: 2026-08-03.
+Last updated: 2026-08-04.
 
 ---
 
@@ -10,7 +10,7 @@ Last updated: 2026-08-03.
 | --- | --- |
 | M0 — The flake builds reproducibly | done |
 | M1 — Scaffold conventions applied and verified by cloning | done |
-| M2 — Activated on this host | done 2026-08-03, except the login shell |
+| M2 — Activated on this host | done — activated 2026-08-03, login shell 2026-08-04 |
 | M3 — Experiments, and what they leave behind | **next** |
 
 Repository setup, 2026-08-03: `dev` is the default branch, `master` is
@@ -20,7 +20,6 @@ whose name does not match blocks every merge waiting for something that never
 arrives. The blocked labels are `needs-manual-check` and `needs-nixos-host`.
 
 ```
-$ export NIX_CONFIG="experimental-features = nix-command flakes"   # see CLAUDE.md
 $ tool/checks/test
 ── Verification coverage ─────────────────────────────────
    host: x86_64-linux
@@ -40,10 +39,14 @@ since 2026-08-03, so `~/.config/nix/nix.conf` is managed and flakes need no
 `NIX_CONFIG`. The workaround that dominated every earlier session is now only
 for an unactivated clone; `CLAUDE.md` keeps it on that footing.
 
-The login shell is still bash. zsh is installed and configured, and was
-verified to start clean under a pty with `claude`, `conda` and `sdk` resolving,
-but `just switch-shell` needs `sudo` and `chsh` passwords and so waits for a
-person.
+The login shell is the nix-managed zsh since 2026-08-04, registered in
+`/etc/shells` and set with `chsh`. Verified afterwards in a clean interactive
+login shell (`env -i` plus a pty, so nothing was inherited from the caller):
+`~/.local/bin` and `~/.opencode/bin` land at the *end* of `PATH`, so `bat`
+resolves to the nix package while `claude`, `uv` and `uvx` still resolve to the
+standalone installs; `LANG` is `en_US.UTF-8` and `locale charmap` returns
+`UTF-8`; `conda` and `sdk` load as functions. `~/.bashrc` is untouched, so bash
+remains the fallback.
 
 `tool/doctor.sh` reports what is actually here. Prefer running it over trusting
 this paragraph, which is only true as of the date above.
@@ -109,11 +112,14 @@ one host alias should not change how ssh behaves everywhere else. home-manager
 documents the option as heading for deprecation; the replacement is to declare
 `settings."*"` explicitly rather than to accept the block.
 
-**Activation is deferred and stays a manual act.** Every claim made so far was
-established by building, never by switching. This is not caution for its own
-sake: `home-manager switch` writes into `$HOME` over files this repo does not
-own, and refuses to clobber unmanaged ones, so a half-applied switch can leave
-the shell broken. M2 exists to do it deliberately, once.
+**Activation stays a manual act, and everything else is verified by building.**
+Up to M2 every claim was established by building, never by switching. This is
+not caution for its own sake: `home-manager switch` writes into `$HOME` over
+files this repo does not own, and refuses to clobber unmanaged ones, so a
+half-applied switch can leave the shell broken. M2 did it deliberately, once.
+The rule survives M2 unchanged — a session does not switch unless it was asked
+to, and `tool/checks/test` is what proves an evaluation without touching the
+machine.
 
 **GUI terminal emulators, fonts and secrets management are out of scope.**
 Terminals and fonts belong to the Windows side of a WSL setup; agenix waits
@@ -209,12 +215,36 @@ This is the third instance of one shape in this repository — **treating "could
 not compute" as an answer**, after `tool/checks/test` did it twice. Worth
 naming, because the next one will not look like either of them. The rule that
 falls out: when a check cannot run, say that, and never let the fallback be one
-of the real verdicts.
+of the real verdicts. The next one did not look like either of them; it is the
+entry below.
+
+**A green `git status` described a filesystem nobody had.** Run inside an agent
+sandbox, `git status` reported nineteen untracked entries in the repository
+root — `.bashrc`, `.zshrc`, `.gitconfig`, `.idea`, `.vscode` — which reads as
+`$HOME` having been emptied into the repo. `ls -l` showed them as
+`crw-rw-rw- … nobody nogroup 1, 3`: character devices, every one of them
+`/dev/null`, all sharing a single mtime to the nanosecond. `git add -N .`
+refused the tree outright. Outside the sandbox, the same commands on the same
+commit reported nothing at all — no devices, empty `git status`, no mounts. The
+sandbox bind-mounts `/dev/null` over the paths it denies, and those mounts live
+in its mount namespace, so every command run inside sees them and nothing
+outside does.
+
+This is the sibling of the entry above and the more dangerous of the two.
+There, the probe *failed* and a bad fallback promoted the failure to a verdict.
+Here the probe *succeeded* — exit 0, no error, no warning — and its answer was
+true of the namespace it ran in and false of the disk. Nothing breaks, so
+nothing signals. The rule that falls out is narrower than the previous one:
+a command's answer is scoped to the environment it ran in, so before believing
+anything about files this repository does not track, re-run it outside the
+sandbox and compare. `warning: unable to access '.gitmodules': Permission
+denied`, emitted by git commands that otherwise work, is the same cause showing
+through.
 
 **`pre-push` ran the whole suite to delete a branch.** Deleting the first
 merged branch was blocked by a test run that could not tell it apart from a
 push of new commits. Nothing a deletion does can fail a test, and on this host
-— where the suite needs `NIX_CONFIG` — it meant branch cleanup was impossible
+— where the suite then needed `NIX_CONFIG` — it meant branch cleanup was impossible
 without `--no-verify`, which is the habit least worth teaching. The hook now
 reads the refs git hands it on stdin and skips when all of them are deletions.
 Fixed upstream in project-scaffold's core as well; both were found here, on the
@@ -234,18 +264,21 @@ When stuck, grep it for the error text rather than reading it.
 
 ## Next
 
-**One thing needs a person: `just switch-shell`.** It registers the nix zsh in
-`/etc/shells` with `sudo` and then runs `chsh`, so it asks for a password twice
-and cannot be run by an agent. Everything it depends on is already in place —
-zsh starts clean under a pty, and `claude`, `conda` and `sdk` resolve inside
-it. Until it runs, `echo $SHELL` says bash and the zsh configuration is written
-but unread.
+**M2 is closed.** `just switch-shell` ran on 2026-08-04 — it needs a password
+twice, for `sudo` and `chsh`, so it was the one step an agent could not do.
 
 Everything moved aside during activation is still on disk, under
 `*.before-home-manager.<stamp>`, plus a tarball of the whole set at
 `~/dotfiles-backup/`. Delete them once the shell switch has been lived with for
 a few days — not before, because the bash fallback is what you land in if zsh
-fails to start.
+fails to start. Five files and one tarball; `find ~ -maxdepth 3 -name
+'*.before-home-manager.*'` lists them.
+
+**Left undone deliberately:** `programs.yazi.shellWrapperName` prints a
+`stateVersion` deprecation warning on every build, so it appears in the
+coverage block pasted into every pull request. The fix is the one in
+`troubleshooting.md` — pin the option or bump `stateVersion` — and it was left
+out of the M2 merge rather than folded into an unrelated change.
 
 Then M3. `gitleaks` arrived with M2 as predicted, so the secret scan now runs
 locally as well as in CI; the M3 secrets experiment no longer starts from a

@@ -12,8 +12,8 @@ not the configuration.
 ## Start here, every session
 
 1. `tool/doctor.sh` — verifies the toolchain and that the git hooks are enabled.
-   Do not skip it: a clone does not have hooks until `core.hooksPath` is set,
-   and this host has a known ✗ described under **This host** below.
+   Do not skip it: a clone does not have hooks until `core.hooksPath` is set.
+   It exits 0 on this host; if it does not, believe it over **This host** below.
 2. `gh issue list --label blocked` — work a previous session could not finish
    because it needed something this host may now have. Check whether any is now
    unblocked before starting something new.
@@ -23,6 +23,14 @@ not the configuration.
 **When something breaks in a way that makes no sense**, grep
 `docs/troubleshooting.md` for the error text before investigating — its headings
 are the literal messages. Do not read it end to end; it is a lookup table.
+
+**If you are an agent, suspect your own sandbox first.** Its shell tool runs in
+a mount namespace that bind-mounts over the paths it denies, so `git status`
+can list dotfiles nobody created, `git add -N .` can refuse the tree, and git
+can warn `unable to access '.gitmodules': Permission denied` — none of it true
+of the disk, and none of it reproducible by a person in a terminal. The check
+is always the same: run the command again outside the sandbox and compare. See
+**The agent sandbox** in `docs/troubleshooting.md`.
 
 ## The rules that are expensive to break
 
@@ -83,10 +91,12 @@ once per shell. Do not hand-write `~/.config/nix/nix.conf` instead —
 home-manager refuses to clobber an unmanaged file, so that turns the first
 switch into a failure.
 
-**zsh is installed and configured; whether it is the login shell is a separate
-question.** `just switch-shell` does that, and it needs a password twice —
-`sudo` to register the shell in `/etc/shells`, then `chsh` — so an agent cannot
-run it. Check `echo $SHELL` rather than assuming.
+**The login shell is the nix-managed zsh**, switched on 2026-08-04. That also
+means the shell an agent's tooling runs is zsh, not bash: an unmatched glob is
+an error rather than a literal, so a pattern that may match nothing needs
+`setopt nullglob` or `find`. On a fresh machine the switch is `just
+switch-shell`, which needs a password twice — `sudo` to register the shell in
+`/etc/shells`, then `chsh` — so an agent cannot run it.
 
 **`~/.bashrc` is not managed and still holds the conda, SDKMAN and opencode
 hooks it always did.** The same hooks are declared in `home/shell.nix` for zsh.

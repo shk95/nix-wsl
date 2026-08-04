@@ -68,18 +68,32 @@ gc:
 #
 ############################################################################
 
-# Evaluate and build the NixOS-WSL closure. tool/checks/test skips this build
-# by default, because nothing on a non-NixOS host can activate it.
+# `tool/checks/test` skips this build by default, because nothing on a
+# non-NixOS host can activate the result. This is the deliberate way to ask
+# for it; `CHECKS_BUILD_ALL=1 tool/checks/test` is the other.
+
+# Build the NixOS-WSL closure (~1.9 GiB)
 [group('nixos-wsl')]
 nixos-build:
     nix build --no-link --print-out-paths .#nixosConfigurations.wsl.config.system.build.toplevel
 
-# Produce the .tar.gz that `wsl --import` takes. NixOS-WSL's builder refuses to
-# run unless EUID is 0 — it chowns paths inside the rootfs — so this needs a
-# password and an agent cannot run it. Writes nixos-wsl.tar.gz to the cwd.
+# NixOS-WSL's builder refuses to run unless EUID is 0 — it chowns paths inside
+# the rootfs it assembles — so this needs a password and an agent cannot run
+# it. It takes several minutes, because it runs a real `nixos-install` into a
+# temporary root before archiving it.
+#
+# The output path is passed explicitly rather than left to the builder's
+# default, which is `nixos.wsl` relative to whatever the cwd happens to be. It
+# lands in the repo root and is gitignored; it is owned by root, so removing it
+# needs sudo as well.
+
+# Produce the rootfs archive that `wsl --import` takes (needs sudo)
 [group('nixos-wsl')]
 nixos-tarball:
-    sudo $(nix build --no-link --print-out-paths .#nixosConfigurations.wsl.config.system.build.tarballBuilder)/bin/nixos-wsl-tarball-builder
+    sudo $(nix build --no-link --print-out-paths .#nixosConfigurations.wsl.config.system.build.tarballBuilder)/bin/nixos-wsl-tarball-builder nixos.wsl
+    @echo
+    @echo "Wrote ./nixos.wsl (root-owned, gitignored). Next step is on the"
+    @echo "Windows side, not in here — see docs/status.md, 'The next experiment'."
 
 ############################################################################
 #

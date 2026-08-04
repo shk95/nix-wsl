@@ -72,5 +72,13 @@ result-*
 # direnv's cache
 .direnv/
 
+# The NixOS-WSL rootfs that `just nixos-tarball` produces. It defaults to
+# ./nixos.wsl — the builder's own default, written to whatever the cwd is —
+# and it is around a gigabyte, owned by root because the builder runs under
+# sudo. Neither `result` nor `*.gz` catches it, and an untracked gigabyte in
+# the repo root is one `git add -A` away from a very bad commit.
+nixos.wsl
+*.wsl
+
 # flake.lock is NOT ignored. It is the actual pin — reproducibility is the
 # point of this repository, and one that ignores its lock file has none.

@@ -1,18 +1,23 @@
 # nix-wsl
 
-A Nix testbed for WSL: standalone
-[home-manager](https://github.com/nix-community/home-manager) with no system
-layer, seeded from the nix-darwin config at
-[shk95/nix-config](https://github.com/shk95/nix-config). NixOS-WSL is the next
-thing to try here; macOS is not in scope, and the checks assume everything
-targets `x86_64-linux`.
+A Nix testbed for WSL, in two flavours that share their
+[home-manager](https://github.com/nix-community/home-manager) modules. Seeded
+from the nix-darwin config at
+[shk95/nix-config](https://github.com/shk95/nix-config); macOS is not in scope,
+and the checks assume everything targets `x86_64-linux`.
+
+| | |
+| --- | --- |
+| `homeConfigurations.user1` | Standalone home-manager. No system layer, so it runs on **any** WSL distro that has Nix — including one you are not allowed to replace. |
+| `nixosConfigurations.wsl` | NixOS-WSL. Adds everything standalone cannot reach: services, system packages, the login shell, `/etc`. |
+
+Neither is the junior partner. `home/` is written once and evaluated under both,
+`home/standalone.nix` is the part that only makes sense with no system layer
+beneath it, and `system/` is the part standalone has no option for at all.
 
 It exists to try things and to learn Nix, so `docs/troubleshooting.md` and the
 decision notes in `docs/status.md` matter more here than the configuration
 itself does.
-
-Because there is no system-level module, this works on any WSL distro that has
-Nix installed.
 
 ## Setup
 
@@ -96,8 +101,9 @@ itself.
 | Path | What lives there |
 | --- | --- |
 | `flake.nix` | Inputs, `homeConfigurations.user1` and `nixosConfigurations.wsl` |
-| `home/` | home-manager modules; `programs/` is one file per program |
-| `system/` | NixOS modules, for the NixOS-WSL experiment |
+| `home/` | home-manager modules, shared by both flavours; `programs/` is one file per program |
+| `home/standalone.nix` | The part that only makes sense with no system layer under it |
+| `system/` | NixOS modules; things standalone has no option for at all |
 | `tool/` | The environment doctor, the checks, the worktree helper |
 | `docs/` | What "done" means, current state, and findings worth grepping |
 | `Justfile` | Day-to-day commands |

@@ -58,16 +58,36 @@ this paragraph, which is only true as of the date above.
 
 ## Decisions that are expensive to reverse
 
-**Standalone home-manager, not NixOS-WSL.** The user environment is managed
-without any system layer, so this works on any WSL distro with Nix installed
-and does not require replacing the distro. The cost is that nothing
-system-level can be declared here — no services, no system packages. Reversing
-it means adopting NixOS-WSL and rewriting the entry point, so the decision is
-worth revisiting only if something genuinely system-level is needed.
+**Both flavours are first-class, and `home/` is shared between them.**
+Superseded the original decision, which was "standalone home-manager, not
+NixOS-WSL, revisit only if something genuinely system-level is needed". Two
+things changed it.
 
-That sentence has been read as "trying NixOS-WSL is a one-way door", and it is
-not — the entry point is the flake's, not the machine's. See **The next
-experiment** below, where the difference is measured rather than assumed.
+The first is that something system-level was in fact needed, and had already
+cost a day: M2's last open item was the login shell, which needed `sudo` and
+`chsh` and so could not be done without a person. NixOS expresses it as
+`users.users.<name>.shell` and registers `/etc/shells` itself. The same is now
+true of the UID in `../system`, which no standalone option can reach.
+
+The second is that the containment runs one way, and the intuitive reading of it
+is backwards. **NixOS-WSL is a superset of standalone**, not an equivalent:
+anything home-manager expresses, NixOS can express too via
+`home-manager.nixosModules.home-manager`, while `users.*`, `services.*`,
+`environment.systemPackages`, `boot.*` and `wsl.*` have no standalone
+counterpart at all — `home-manager` has no `users` option, checked rather than
+assumed. So a configuration developed *against* NixOS-WSL drifts into system
+options and then cannot be run standalone, whereas one developed in `home/`
+runs under both. The safe direction is standalone → NixOS.
+
+**Standalone is therefore not demoted to a test rig.** It is the only thing that
+works on a machine whose distro you cannot replace — a work laptop with an
+Ubuntu WSL you do not control — and that is a real use rather than a hedge.
+Keeping it first-class costs nothing *because* of the structure: `home/` is
+written once and evaluated twice, `home/standalone.nix` holds the part that only
+makes sense without a system layer, and `../system` holds the part standalone
+cannot have. Verified as a pure refactor when the split was made — the
+standalone activation package came out at the same store path as the generation
+already running on this host.
 
 **The unix account and the git identity are separate variables.** `user =
 "user1"` is the login on this host; `gitname = "shk"` is the commit author.
@@ -414,8 +434,20 @@ system configuration would have its user services silently fail, and the cause
 would be nothing to do with the configuration. That is a genuine constraint on
 the design, discovered by booting the thing rather than by reasoning about it.
 
-Untested: whether giving the NixOS user a different UID clears it. That is the
-obvious next move and the mechanism predicts it should.
+**The UID workaround works, and is now declared.** Tested inside the running
+distro before being written down, with a normal non-root account rather than
+root, since root might plausibly be treated differently:
+
+```
+user@1001.service (UID 1001, unclaimed)  → active,  /run/user/1001/bus exists
+user@1000.service (UID 1000, Ubuntu's)   → cannot start
+```
+
+`../system` therefore sets `users.users.user1.uid = 2000`. Not 1001, which is
+exactly what Ubuntu's next `useradd` would hand out; Ubuntu holds 1000 and then
+nixbld at 30001+, so 2000 is clear of both. It takes effect on a **freshly
+imported** distribution — changing it on the existing one would leave
+`/home/user1` owned by the old UID.
 
 The numbers below are what shaped the design, and they were cheaper to get than
 to undo.

@@ -1,8 +1,8 @@
 # Working on this repository
 
-A Nix testbed for WSL, and nothing else. Standalone home-manager with no
-system layer today; NixOS-WSL is the next thing to try here. Seeded from the
-nix-darwin config at
+A Nix testbed for WSL, and nothing else. Two flavours, both first-class:
+standalone home-manager (`homeConfigurations.user1`) and NixOS-WSL
+(`nixosConfigurations.wsl`). Seeded from the nix-darwin config at
 [shk95/nix-config](https://github.com/shk95/nix-config), but macOS is not in
 scope — everything here targets `x86_64-linux`, and the checks assume it.
 
@@ -39,6 +39,15 @@ is always the same: run the command again outside the sandbox and compare. See
   experiment produced nothing, because the config itself is disposable and the
   lesson will not survive being rewritten. Record it in
   `docs/troubleshooting.md`.
+- **`home/` belongs to both flavours; put standalone-only things in
+  `home/standalone.nix` and NixOS-only things in `system/`.** The containment
+  runs one way and reads backwards: NixOS-WSL is a *superset* — it can express
+  everything home-manager can, plus `users.*`, `services.*` and the rest, none
+  of which standalone has any equivalent for. So a change written against the
+  NixOS flavour can quietly become impossible to run standalone, while a change
+  written in `home/` runs under both. Standalone is not a test rig being phased
+  out; it is the only thing that works on a machine whose distro you cannot
+  replace.
 - **Keep the scope at WSL.** Everything here targets `x86_64-linux`, and
   `tool/checks/test` assumes it — a configuration for another system is
   refused outright rather than half-verified. Adding one is not a small
@@ -125,8 +134,9 @@ Concurrent `nix build` runs are fine — the daemon serialises the store.
 | Path | What lives there |
 | --- | --- |
 | `flake.nix` | Inputs, and the `homeConfigurations.user1` output |
-| `home/` | home-manager modules; `programs/` is one file per program |
-| `system/` | NixOS modules for `nixosConfigurations.wsl` — the M3 experiment |
+| `home/` | home-manager modules, shared by both flavours; `programs/` is one file per program |
+| `home/standalone.nix` | The standalone-only part — not imported by `home/default.nix` |
+| `system/` | NixOS modules for `nixosConfigurations.wsl`; standalone cannot have these |
 | `tool/checks/` | What the git hooks and CI both run |
 | `tool/doctor.sh` | Whether this machine can build, check and commit |
 | `Justfile` | Day-to-day commands |

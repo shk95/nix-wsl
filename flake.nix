@@ -37,10 +37,13 @@
       config.allowUnfree = true;
     };
   in {
+    # Standalone: no system layer, so this is what runs on a machine whose
+    # distro cannot be replaced. `./home` is shared with the NixOS flavour
+    # below; `./home/standalone.nix` is the part that only makes sense here.
     homeConfigurations.${user} = home-manager.lib.homeManagerConfiguration {
       inherit pkgs;
       extraSpecialArgs = {inherit user gitname gitmail;};
-      modules = [./home];
+      modules = [./home ./home/standalone.nix];
     };
 
     # M3's first experiment, and a second flavour for the checks. Nothing here
@@ -52,7 +55,19 @@
       specialArgs = {inherit user;};
       modules = [
         nixos-wsl.nixosModules.default
+        home-manager.nixosModules.home-manager
         ./system
+        {
+          # The same `./home` the standalone flavour uses. Sharing it here is
+          # the whole point: one set of modules, evaluated under both, so
+          # neither drifts from the other by neglect.
+          home-manager = {
+            useGlobalPkgs = true;
+            useUserPackages = true;
+            extraSpecialArgs = {inherit user gitname gitmail;};
+            users.${user} = ./home;
+          };
+        }
       ];
     };
 

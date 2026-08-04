@@ -1,17 +1,25 @@
 #!/bin/sh
-# Two tiers of verification, because they catch different things.
+# Two tiers of verification, and a rule about which configurations get the
+# second one.
 #
-#   Tier 1 — eval.  Forces each configuration's toplevel derivation. Catches
-#                   option typos, type errors, module assertions and bad
-#                   imports — most of what actually breaks a config repo.
-#   Tier 2 — build. Realises it, proving the packages exist and the closure
-#                   builds.
+#   Tier 1 — eval.  Forces each configuration's toplevel derivation. Writing
+#                   that .drv requires instantiating the whole input graph, so
+#                   this already catches option typos, type errors, module
+#                   assertions, bad imports *and* packages that do not exist.
+#   Tier 2 — build. Realises it. What this adds over eval is narrower than it
+#                   looks: sources that cannot be fetched, and derivations that
+#                   fail to compile.
 #
 # `nix flake check` is neither, and this is the reason the script exists: it
 # validates the flake's shape and its standard outputs, and does not descend
 # into homeConfigurations / nixosConfigurations / darwinConfigurations at all.
 # A green `nix flake check` says nothing about whether your configurations
 # work. Forcing `.drvPath` is what actually evaluates them.
+#
+# A `nix build --dry-run` middle tier was tried and removed: measured against
+# eval it caught nothing extra. A nonexistent package fails both; an
+# unfetchable source passes both. It survives here only to report the size of a
+# build that was skipped, which is information rather than verification.
 #
 # Every configuration is assumed to target the machine you run this on — true
 # of a single-host repo, and of WSL work where everything is x86_64-linux. One
@@ -34,6 +42,23 @@ toplevel_attr() {
   case $1 in
     homeConfigurations) echo "activationPackage" ;;
     *)                  echo "config.system.build.toplevel" ;;
+  esac
+}
+
+# Tier 2 is expensive, and what it proves is per *repository* rather than per
+# configuration: one configuration built from a clean checkout already shows
+# the commit is complete and nothing local leaked into it. A second one buys
+# very little for a great deal more — a minimal NixOS closure is upwards of
+# 600 MiB, and CI starts from an empty store every run.
+#
+# So build what this host could actually activate, and say plainly what was
+# not built. `nixos-rebuild switch` needs a NixOS host; home-manager runs
+# anywhere. Set CHECKS_BUILD_ALL=1 to build everything regardless — worth doing
+# deliberately when a flavour changes, and cheap locally once the store is warm.
+activatable_here() {
+  case $1 in
+    nixosConfigurations) [ -r /etc/os-release ] && grep -q '^ID=nixos' /etc/os-release ;;
+    *)                   return 0 ;;
   esac
 }
 
@@ -61,11 +86,20 @@ check_flavour() {
       continue
     fi
 
+    if [ -z "${CHECKS_BUILD_ALL:-}" ] && ! activatable_here "$output"; then
+      printf '→ skip  %s.%s — nothing here can activate it\n' "$output" "$name"
+      size=$(nix build --dry-run "$ref.$attr" 2>&1 \
+             | sed -n 's/.*will be fetched (\([^)]*\)).*/\1/p' | head -1)
+      printf '%s.%s|%s|SKIPPED|%s\n' "$output" "$name" "$system" \
+             "${size:-already in the store}" >> "$report"
+      continue
+    fi
+
     printf '→ build %s.%s\n' "$output" "$name"
     if nix build --no-link "$ref.$attr"; then
-      printf '%s.%s|%s|ok\n' "$output" "$name" "$system" >> "$report"
+      printf '%s.%s|%s|ok|\n' "$output" "$name" "$system" >> "$report"
     else
-      printf '%s.%s|%s|BUILD_FAIL\n' "$output" "$name" "$system" >> "$report"
+      printf '%s.%s|%s|BUILD_FAIL|\n' "$output" "$name" "$system" >> "$report"
     fi
   done
 }
@@ -78,17 +112,28 @@ echo
 echo "── Verification coverage ─────────────────────────────────"
 printf '   host: %s\n\n' "$here"
 
-while IFS='|' read -r target system status; do
+while IFS='|' read -r target system status detail; do
   case "$status" in
     ok)         line="eval ✓ build ✓" ;;
     EVAL_FAIL)  line="eval ✗" ;;
     BUILD_FAIL) line="eval ✓ build ✗" ;;
+    SKIPPED)    line="eval ✓ build — not activatable here ($detail)" ;;
     FOREIGN)    line="not attempted — targets $system" ;;
     *)          line="unknown" ;;
   esac
   printf '   %-38s %s\n' "$target" "$line"
 done < "$report"
 echo
+
+if grep -q '|SKIPPED|' "$report"; then
+  cat <<EOF
+   · A configuration was evaluated but not built, because this host cannot
+     activate it. Evaluation still instantiates its whole graph, so what is
+     unproven is narrow: that its sources fetch and its derivations compile.
+     Build it anyway with CHECKS_BUILD_ALL=1.
+
+EOF
+fi
 
 if grep -q 'FOREIGN' "$report"; then
   cat >&2 <<EOF

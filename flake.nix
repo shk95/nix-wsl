@@ -8,11 +8,20 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # M3's first experiment. `follows` is not optional housekeeping here:
+    # NixOS-WSL pins its own nixpkgs, and without this the flake evaluates two
+    # of them.
+    nixos-wsl = {
+      url = "github:nix-community/NixOS-WSL";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = {
     nixpkgs,
     home-manager,
+    nixos-wsl,
     ...
   }: let
     system = "x86_64-linux";
@@ -32,6 +41,19 @@
       inherit pkgs;
       extraSpecialArgs = {inherit user gitname gitmail;};
       modules = [./home];
+    };
+
+    # M3's first experiment, and a second flavour for the checks. Nothing here
+    # can activate this — `nixos-rebuild switch` needs a NixOS host, and this
+    # one is Ubuntu — so `tool/checks/test` evaluates it and reports the build
+    # it skipped. `CHECKS_BUILD_ALL=1` builds it anyway.
+    nixosConfigurations.wsl = nixpkgs.lib.nixosSystem {
+      inherit system;
+      specialArgs = {inherit user;};
+      modules = [
+        nixos-wsl.nixosModules.default
+        ./system
+      ];
     };
 
     # `nix develop` gives you a shell with everything needed to edit this

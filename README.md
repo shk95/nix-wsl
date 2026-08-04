@@ -95,8 +95,9 @@ itself.
 
 | Path | What lives there |
 | --- | --- |
-| `flake.nix` | Inputs, and the `homeConfigurations.user1` output |
+| `flake.nix` | Inputs, `homeConfigurations.user1` and `nixosConfigurations.wsl` |
 | `home/` | home-manager modules; `programs/` is one file per program |
+| `system/` | NixOS modules, for the NixOS-WSL experiment |
 | `tool/` | The environment doctor, the checks, the worktree helper |
 | `docs/` | What "done" means, current state, and findings worth grepping |
 | `Justfile` | Day-to-day commands |

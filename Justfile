@@ -64,6 +64,25 @@ gc:
 
 ############################################################################
 #
+#  nixos-wsl  (M3 experiment)
+#
+############################################################################
+
+# Evaluate and build the NixOS-WSL closure. tool/checks/test skips this build
+# by default, because nothing on a non-NixOS host can activate it.
+[group('nixos-wsl')]
+nixos-build:
+    nix build --no-link --print-out-paths .#nixosConfigurations.wsl.config.system.build.toplevel
+
+# Produce the .tar.gz that `wsl --import` takes. NixOS-WSL's builder refuses to
+# run unless EUID is 0 — it chowns paths inside the rootfs — so this needs a
+# password and an agent cannot run it. Writes nixos-wsl.tar.gz to the cwd.
+[group('nixos-wsl')]
+nixos-tarball:
+    sudo $(nix build --no-link --print-out-paths .#nixosConfigurations.wsl.config.system.build.tarballBuilder)/bin/nixos-wsl-tarball-builder
+
+############################################################################
+#
 #  setup
 #
 ############################################################################

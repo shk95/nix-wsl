@@ -126,6 +126,7 @@ Concurrent `nix build` runs are fine — the daemon serialises the store.
 | --- | --- |
 | `flake.nix` | Inputs, and the `homeConfigurations.user1` output |
 | `home/` | home-manager modules; `programs/` is one file per program |
+| `system/` | NixOS modules for `nixosConfigurations.wsl` — the M3 experiment |
 | `tool/checks/` | What the git hooks and CI both run |
 | `tool/doctor.sh` | Whether this machine can build, check and commit |
 | `Justfile` | Day-to-day commands |

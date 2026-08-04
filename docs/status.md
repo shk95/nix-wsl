@@ -335,14 +335,34 @@ with packages already moved into it answers the question by assumption.
 | --- | --- |
 | evaluates through `tool/checks/test` | ✓ |
 | closure builds (`CHECKS_BUILD_ALL=1`) | ✓ 1.9 GiB |
-| tarball for `wsl --import` | **blocked — needs `sudo`** |
+| tarball for `wsl --import` | ✓ built 2026-08-04 by a person — 603 MB |
 | imported and booted | not started |
 | `nixos-rebuild switch` inside it | not started |
 
-The tarball is the same shape of blocker as `just switch-shell` was:
-NixOS-WSL's builder opens with `if ! [ $EUID -eq 0 ]` and exits, because it
-chowns paths inside the rootfs. `just nixos-tarball` is the one command, and it
-needs a person.
+The tarball was the same shape of blocker as `just switch-shell`: NixOS-WSL's
+builder opens with `if ! [ $EUID -eq 0 ]` and exits, because it chowns paths
+inside the rootfs it assembles, so it needs a password and a person.
+`just nixos-tarball` is the one command; it takes several minutes, because it
+runs a real `nixos-install` into a temporary root before archiving it.
+
+**Two things that were wrong when this recipe was first written**, both found
+by watching the real run rather than by reading the script:
+
+- The output is **`nixos.wsl`**, not `nixos-wsl.tar.gz`. That is the builder's
+  own default, and it is relative to whatever the cwd happens to be. The recipe
+  now passes the path explicitly instead of inheriting it.
+- Nothing in `.gitignore` caught it. A 603 MB root-owned file appeared in the
+  repository root as untracked — `result` and `*.gz` both miss it, and it is one
+  `git add -A` away from a very bad commit. `*.wsl` is now ignored.
+
+Removing it needs `sudo rm`, since the builder runs as root.
+
+The remaining step is on the Windows side:
+
+```
+wsl --import NixOS <install-dir> \\wsl.localhost\Ubuntu-26.04\home\user1\github_prj\nix-wsl\nixos.wsl
+wsl -d NixOS
+```
 
 The numbers below are what shaped the design, and they were cheaper to get than
 to undo.

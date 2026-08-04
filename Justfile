@@ -92,8 +92,33 @@ nixos-build:
 nixos-tarball:
     sudo $(nix build --no-link --print-out-paths .#nixosConfigurations.wsl.config.system.build.tarballBuilder)/bin/nixos-wsl-tarball-builder nixos.wsl
     @echo
-    @echo "Wrote ./nixos.wsl (root-owned, gitignored). Next step is on the"
-    @echo "Windows side, not in here — see docs/status.md, 'The next experiment'."
+    @echo "Wrote ./nixos.wsl (root-owned, gitignored). Now run: just nixos-stage"
+
+# `wsl --import` will not take a UNC source path. `\\wsl.localhost\...` reads
+# perfectly from `dir`, so it is not a permissions or 9p problem — the importer
+# specifically does not accept one, and the failure does not say so. Copying the
+# image onto a real Windows drive first is what makes the path plain and the
+# command work. About four seconds over drvfs, not the minute you would expect.
+
+# Copy the rootfs archive somewhere `wsl --import` will actually read it
+[group('nixos-wsl')]
+nixos-stage dest="/mnt/c/WSL":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    [ -f nixos.wsl ] || { echo "No ./nixos.wsl — run 'just nixos-tarball' first." >&2; exit 1; }
+    [ -d "$(dirname "{{ dest }}")" ] || { echo "{{ dest }} is not reachable — is that drive mounted?" >&2; exit 1; }
+    mkdir -p "{{ dest }}"
+    cp nixos.wsl "{{ dest }}/nixos.wsl"
+    gzip -t "{{ dest }}/nixos.wsl"
+    win=$(printf '%s' "{{ dest }}/nixos.wsl" | sed 's|^/mnt/\([a-z]\)|\U\1:|; s|/|\\|g')
+    echo
+    echo "Staged and verified. From PowerShell or CMD — not from in here:"
+    echo
+    echo "  wsl --import NixOS C:\\WSL\\NixOS $win"
+    echo "  wsl -d NixOS"
+    echo
+    echo "That registers a NEW distribution. Ubuntu is untouched;"
+    echo "rollback is: wsl --unregister NixOS"
 
 ############################################################################
 #

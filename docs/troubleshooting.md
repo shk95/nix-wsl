@@ -111,6 +111,30 @@ and an untracked `flake.nix`. Each of these used to be reported as
 "nix-command/flakes not enabled by default", which sent you to a variable that
 could not help.
 
+### `wsl --import` will not read the image from `\\wsl.localhost\...`
+
+The obvious way to import a rootfs built inside WSL is to point at it where it
+already is:
+
+```
+wsl --import NixOS C:\WSL\NixOS \\wsl.localhost\Ubuntu-26.04\home\<user>\...\nixos.wsl
+```
+
+It does not work, and the interesting part is that the path is fine. `dir` reads
+it through both spellings:
+
+```
+> dir \\wsl.localhost\Ubuntu-26.04\home\user1\github_prj\nix-wsl\nixos.wsl
+       603,474,420 nixos.wsl
+> dir \\wsl$\Ubuntu-26.04\home\user1\github_prj\nix-wsl\nixos.wsl
+       603,474,420 nixos.wsl
+```
+
+So it is not permissions, not 9p, and not the distro name. The importer
+specifically does not accept a UNC source. Copy the image to a real Windows
+drive first and give it a plain path — `just nixos-stage` does that, verifies
+the copy, and prints the exact command. It takes about four seconds over drvfs.
+
 ### CI fails on a path that exists on your machine
 
 ```

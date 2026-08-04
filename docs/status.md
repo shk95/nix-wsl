@@ -324,8 +324,27 @@ When stuck, grep it for the error text rather than reading it.
 
 ## The next experiment: NixOS-WSL
 
-Groundwork done 2026-08-04. No code yet, deliberately — the numbers below
-change what the experiment should look like, and they were cheaper to get than
+Groundwork done 2026-08-04, and the flake now carries
+`nixosConfigurations.wsl` — `system/default.nix`, deliberately almost empty,
+because starting an experiment about whether a system layer earns its place
+with packages already moved into it answers the question by assumption.
+
+**Where it has got to:**
+
+| | |
+| --- | --- |
+| evaluates through `tool/checks/test` | ✓ |
+| closure builds (`CHECKS_BUILD_ALL=1`) | ✓ 1.9 GiB |
+| tarball for `wsl --import` | **blocked — needs `sudo`** |
+| imported and booted | not started |
+| `nixos-rebuild switch` inside it | not started |
+
+The tarball is the same shape of blocker as `just switch-shell` was:
+NixOS-WSL's builder opens with `if ! [ $EUID -eq 0 ]` and exits, because it
+chowns paths inside the rootfs. `just nixos-tarball` is the one command, and it
+needs a person.
+
+The numbers below are what shaped the design, and they were cheaper to get than
 to undo.
 
 **What it is for.** Whether a system layer earns its place here at all: services
@@ -341,9 +360,9 @@ it, which they have never had.
 - `tool/checks/test` already calls `check_flavour nixosConfigurations`, and both
   of its probes work against a real NixOS-WSL configuration: the system probe
   returns `x86_64-linux`, so the FOREIGN guard behaves, and
-  `config.system.build.toplevel.drvPath` evaluates. This closes the
-  "**Not verified:** `nixosConfigurations`" caveat in the overlay README for
-  tier 1.
+  `config.system.build.toplevel.drvPath` evaluates. The closure has since been
+  built as well, so the overlay README's "nothing here has built one" no longer
+  holds — only activation is still untested.
 - The `blocked/needs-nixos-host` label exists for the activation half.
 
 **What it costs, and the decision that forces.** A *minimal* NixOS-WSL toplevel
@@ -353,6 +372,14 @@ it, which they have never had.
 these 169 derivations will be built
 these 255 paths will be fetched (615.5 MiB download, 2.2 GiB unpacked)
 ```
+
+**That number is store-relative, and reading it as absolute will mislead you.**
+It is what the machine asking still needs. The real
+`nixosConfigurations.wsl` reports 385.4 MiB here rather than 615.5, because this
+store already holds much of it from the home-manager configuration — the two
+share nixpkgs. On CI's empty store it is the larger figure, and the coverage
+block printing the smaller one is not a contradiction. The realised closure is
+1.9 GiB either way.
 
 `tool/checks/test` builds every configuration that targets this host, and both
 `pre-push` and CI run it. Locally the store amortises that after the first
@@ -393,6 +420,13 @@ nixosConfigurations.probe   eval ✓ build — not activatable here (615.5 MiB d
 `CHECKS_BUILD_ALL=1` builds everything regardless, which is what to use when a
 flavour actually changes. `--dry-run` survives only to produce that size, which
 is information rather than verification.
+
+**It worked, and the number is the point of the whole detour.** The first CI run
+carrying `nixosConfigurations.wsl` took **100s against a 78s baseline** — 22
+seconds for a second flavour, where building it would have meant a 600 MiB
+download on an empty store every run. The rule was worth establishing before
+the configuration landed rather than after, which is the only reason the
+groundwork came first.
 
 **Reversibility, measured.** NixOS-WSL is installed with `wsl --import`, which
 registers a *new* distribution; it does not convert or replace an existing one.

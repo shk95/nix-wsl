@@ -352,6 +352,41 @@ so anything passed in from `flake.nix` needs a single definition rather than a
 matching pair. Found by asking what the two flavours disagreed on, not by
 anything failing.
 
+**A prompt configuration where 20 of 28 lines did nothing, and the noise hid two
+real bugs.** `home/starship.nix` looked thoroughly configured. Diffing it
+against starship's own computed defaults showed most of it restating them
+exactly — and among the handful of lines that did have an effect:
+
+- `git_status.stashed = "$"` **removed the stash indicator**. `$` opens a
+  variable reference in a starship format string, so it parsed as one, resolved
+  to nothing, and rendered `[?]` where the default `'\$'` gives `[$?]`. A stash
+  existed and the prompt never said so.
+- The whole `time` block was dead twice over: `disabled = true` is its default
+  so it never rendered, and the format it carried, `[$hour:$minute]($style)`,
+  names two variables the module does not have. Enabling it alone produced a
+  bare `:`. The module exposes `$time`; the clock shape belongs in
+  `time_format`.
+
+The second one is the more instructive: a dead setting cannot be wrong, so
+*disabled* hid *incorrect*, and fixing one defect was needed before the other
+became visible at all. A no-op line is not merely clutter — it is a place a bug
+can wait.
+
+The check is cheap and mechanical, and generalises to anything with layered
+defaults:
+
+```sh
+STARSHIP_CONFIG=/dev/null starship print-config > default.toml
+starship print-config                           > ours.toml
+diff default.toml ours.toml   # anything absent can be deleted
+```
+
+Applying it to the replacement caught a third error, this one mine: the comment
+justifying `nix_shell.heuristic = true` claimed `nix develop` does not set
+`IN_NIX_SHELL`. It does. The setting is still right, for `nix shell`, which does
+not — but the reason recorded in the file was false until it was tested rather
+than asserted.
+
 ---
 
 ## Traps that will recur

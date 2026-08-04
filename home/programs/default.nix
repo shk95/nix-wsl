@@ -1,5 +1,6 @@
 _: {
   imports = [
+    ./bat.nix
     ./direnv.nix
     ./gh.nix
     ./git.nix
@@ -7,6 +8,7 @@ _: {
     ./neovim.nix
     ./skim.nix
     ./ssh.nix
+    ./uv.nix
     ./yazi.nix
   ];
 }

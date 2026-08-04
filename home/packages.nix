@@ -1,10 +1,9 @@
 {pkgs, ...}: {
   home.packages = with pkgs; [
-    # search / text
+    # search / text — bat is programs/bat.nix, which also writes its config
     ripgrep
     fd
     fzf
-    bat
     jq
     yq-go
 

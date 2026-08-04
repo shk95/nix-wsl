@@ -336,7 +336,9 @@ with packages already moved into it answers the question by assumption.
 | evaluates through `tool/checks/test` | ✓ |
 | closure builds (`CHECKS_BUILD_ALL=1`) | ✓ 1.9 GiB |
 | tarball for `wsl --import` | ✓ built 2026-08-04 by a person — 603 MB |
-| imported and booted | not started |
+| imported and booted | ✓ 2026-08-04 — NixOS 26.11 (Zokor), systemd 261 |
+| system-level systemd | ✓ works |
+| user-level systemd | ✗ **blocked by WSL, not by NixOS** — see below |
 | `nixos-rebuild switch` inside it | not started |
 
 The tarball was the same shape of blocker as `just switch-shell`: NixOS-WSL's
@@ -376,6 +378,44 @@ wsl -d NixOS
 There are now two copies of a 576 MB file, one in the repo and one on `C:`.
 Both are disposable once the distribution is registered; the repo one needs
 `sudo rm`.
+
+### The first real result: the system layer works, the user layer cannot
+
+`wsl -d NixOS` boots and prints
+*`Failed to start the systemd user session for 'user1'`*. It reads like a
+teething problem in NixOS-WSL. It is not a NixOS problem at all, and the
+diagnosis is worth more than the experiment's original question.
+
+**All WSL distributions share a single cgroup v2 hierarchy.** Ubuntu-26.04 and
+NixOS both have `user1` at UID 1000, so both want
+`/user.slice/user-1000.slice/user@1000.service`. Ubuntu booted first and owns
+it; NixOS's systemd gets `EBUSY` and gives up. Measured, not assumed:
+`/sys/fs/cgroup` reports the same `st_dev` from both, and from inside NixOS you
+can enumerate Ubuntu's delegated subtree with Ubuntu's three processes in it.
+
+The control experiment is what makes it certain — in NixOS, at the same moment:
+
+```
+user@0.service    (UID 0,    unclaimed)      → active
+user@1000.service (UID 1000, held by Ubuntu) → failed
+```
+
+Same kernel, same systemd, same second; the only variable is whether another
+distribution already holds that UID's path. Upstream:
+[microsoft/WSL#40519](https://github.com/microsoft/WSL/pull/40519) isolates
+per-distro cgroups and is not in WSL 2.7.11.0.
+
+**Why this matters for the question M3 was asking.** The experiment exists to
+find out whether a system layer earns its place, and services are the reason to
+want one. System services work here. *User* services do not, for as long as the
+Ubuntu side is running — which on this machine is always, because that is where
+this repository lives. So a NixOS-WSL setup that put home-manager inside the
+system configuration would have its user services silently fail, and the cause
+would be nothing to do with the configuration. That is a genuine constraint on
+the design, discovered by booting the thing rather than by reasoning about it.
+
+Untested: whether giving the NixOS user a different UID clears it. That is the
+obvious next move and the mechanism predicts it should.
 
 The numbers below are what shaped the design, and they were cheaper to get than
 to undo.

@@ -248,6 +248,24 @@ sandbox and compare. `warning: unable to access '.gitmodules': Permission
 denied`, emitted by git commands that otherwise work, is the same cause showing
 through.
 
+**A verification tier was proposed on the strength of its name.**
+`nix build --dry-run` sounds like it sits between evaluating and building, and
+its cost said the same — 9s against eval's 7s on a closure that takes 615 MiB
+to build. It was written into this file and merged before anyone asked what it
+*catches*. Two control cases settled it:
+
+```
+a package that does not exist    eval FAIL   dry-run FAIL   ← eval already has it
+a source that cannot be fetched  eval PASS   dry-run PASS   ← only a build has it
+```
+
+Nothing. Forcing `.drvPath` must instantiate the whole input graph to write
+that `.drv`, so existence is a tier 1 guarantee, and dry-run only adds
+substituter *availability* — which is not correctness. The general shape, and
+this repo keeps finding it: **a tool's cost is easy to measure and gets
+measured; what it proves is easy to assume and gets assumed.** Two cheap
+control cases, one of which must fail, are what tell them apart.
+
 **The `pre-push` hook and CI do not check the same artifact.** The hook runs
 `tool/checks/test`, which builds `.#`, and for a dirty repository a flake reads
 the *working tree*. CI checks out the *commit*. So the obvious economy — "it
@@ -354,23 +372,27 @@ CI proves is *per repository*, not per configuration. One configuration built
 from a clean checkout already proves the commit is complete. A second one buys
 almost nothing at 615 MiB a run.
 
-**A third tier makes that affordable.** `nix build --dry-run` resolves the whole
-closure — every path must be substitutable or buildable — and downloads
-nothing. Measured on the NixOS-WSL toplevel here:
+**So the rule is which configurations get tier 2, not a new tier.** An earlier
+version of this section proposed `nix build --dry-run` as a cheap middle tier,
+on the strength of it resolving a whole closure for 9s against eval's 7s. That
+was wrong, and the correction is recorded under **Bugs worth remembering**: it
+proves nothing eval does not. Forcing `.drvPath` has to instantiate the entire
+input graph in order to write that `.drv`, so "every package exists" is a tier
+1 guarantee already.
 
-| tier | what it proves | cost |
-| --- | --- | --- |
-| eval — force `.drvPath` | options, types, assertions, imports | 7s |
-| **dry-run** | the closure resolves; every package exists | **9s** |
-| build | derivations actually build | 615.5 MiB, 169 built |
+What tier 2 uniquely proves is therefore narrow: that sources fetch and
+derivations compile. `tool/checks/test` now evaluates every configuration and
+builds the ones this host could activate — `nixos-rebuild switch` needs a NixOS
+host, home-manager runs anywhere — and prints what it skipped, with the size,
+rather than going quiet:
 
-Two seconds over eval to establish that nothing in a 255-path closure is
-missing. That is not the two-tier model weakened, it is the gap between its
-tiers filled — and it makes "evaluate every flavour, build the ones this host
-can activate" a defensible rule rather than a corner cut. The recommendation is
-therefore: NixOS-WSL enters on `dev` with eval + dry-run in CI, build stays
-local. It still needs deciding rather than assuming, because it changes
-`tool/checks/test`, which is shared with the overlay.
+```
+nixosConfigurations.probe   eval ✓ build — not activatable here (615.5 MiB download, 2.2 GiB unpacked)
+```
+
+`CHECKS_BUILD_ALL=1` builds everything regardless, which is what to use when a
+flavour actually changes. `--dry-run` survives only to produce that size, which
+is information rather than verification.
 
 **Reversibility, measured.** NixOS-WSL is installed with `wsl --import`, which
 registers a *new* distribution; it does not convert or replace an existing one.

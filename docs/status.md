@@ -82,20 +82,34 @@ runs under both. The safe direction is standalone → NixOS.
 **Standalone is therefore not demoted to a test rig.** It is the only thing that
 works on a machine whose distro you cannot replace — a work laptop with an
 Ubuntu WSL you do not control — and that is a real use rather than a hedge.
-Keeping it first-class costs nothing *because* of the structure: `home/` is
-written once and evaluated twice, `home/standalone.nix` holds the part that only
-makes sense without a system layer, and `../system` holds the part standalone
-cannot have. Verified as a pure refactor when the split was made — the
-standalone activation package came out at the same store path as the generation
-already running on this host.
+Keeping it first-class costs nothing *because* of the structure: features are
+written once and evaluated twice.
+
+Since the dendritic restructure the mechanism is an option rather than a
+directory. A file under `modules/` contributes to `modules.homeManager.shared`
+(both flavours), `modules.homeManager.standalone` (no system layer beneath) or
+`modules.nixos.wsl`, and `modules/flake/configurations.nix` is the only place
+that decides which of those an evaluator receives. Before, the same rule was a
+directory convention with the reasoning in a comment, which is what let
+`allowUnfree` and `home/nix.nix` go wrong in the two ways recorded below.
+
+**Packages go to home-manager, not the system layer**, and the reason is the
+same containment read forwards. `useUserPackages = true` already folds
+`home.packages` into the NixOS closure — built by `nixos-rebuild`, rolled back
+with the generation, installed to `/etc/profiles/per-user` — so promoting one to
+`environment.systemPackages` gains availability to root and loses it for
+standalone entirely, because `environment.*` has no standalone equivalent. The
+temptation runs the other way (a "common" layer feels like it belongs at the
+bottom), which is why it is written down.
 
 **The unix account and the git identity are separate variables.** `user =
-"user1"` is the login on this host; `gitname = "shk"` is the commit author.
-They were split because they genuinely differ here, and a flake that fuses them
-produces commits authored by a machine account. Any future host merged into
-this repo inherits the split for free.
+"user1"` is the login on this host; `gitName = "shk"` is the commit author.
+They were split because they genuinely differ here, and fusing them produces
+commits authored by a machine account. Both are declared options in
+`modules/flake/identity.nix`, which is also how they stopped being `specialArgs`.
+Any future host merged into this repo inherits the split for free.
 
-**`nix.package` is set explicitly in `home/nix.nix`.** Standalone home-manager
+**`nix.package` is set explicitly in `modules/nix-conf.nix`.** Standalone home-manager
 cannot infer which Nix should generate `nix.conf`, unlike the NixOS and
 nix-darwin modules. Without it the build fails an assertion — and, importantly,
 one that `nix flake check` never reaches. Recorded in `troubleshooting.md`.
@@ -640,6 +654,143 @@ gap.
 
 **A standing chore, not a milestone:** re-run the M1 clone verification whenever
 the files it exercises change. It went stale in a day and nothing flagged it.
+
+---
+
+## M3's second experiment: the dendritic module pattern
+
+**Declared before starting, on 2026-08-04, so that abandoning it is a result
+rather than a failure.** M3's bar is that an experiment leaves something behind,
+not that it succeeds, and a restructure is the kind of work that acquires sunk
+cost quickly. The exit criteria below are what they were at the start; if this
+section ends up describing a reverted experiment, that is a pass.
+
+### Why now
+
+The module layout is descended from a hand-made prototype, and its shape has
+started producing defects rather than merely being untidy. Two so far:
+
+- `allowUnfree` differed between the flavours because it was written where only
+  one of them could read it (fixed in the entry above).
+- `home/nix.nix` is standalone-only, sits among shared modules, and says so
+  nowhere except a comment in the file that imports it. Nothing stops the next
+  reader from adding it to `home/default.nix` and breaking the NixOS flavour.
+
+Both are the same shape: **the layout expresses "what kind of file is this" by
+path, and gets it wrong.** Twenty files is the cheap moment to change that. Sixty
+is not.
+
+### What the pattern is, and what it buys here
+
+Every file below the module tree is a flake-parts module, auto-imported, and each
+one implements one *feature* across every configuration that feature applies to
+— rather than one layer of one configuration. Fragments are stored as option
+values (`flake.modules.<class>.<name>`) and merged by the `deferredModule` type,
+so several files may contribute to the same name.
+
+Three things it addresses directly:
+
+1. **A path is a feature name, not a type.** Whether a fragment reaches the
+   standalone flavour is decided by which configuration imports it, which is one
+   place, rather than by which directory it sits in.
+2. **A feature spanning system and user lives in one file.** This is the question
+   left open above — where a service and its user-side configuration go — and the
+   answer stops being a directory convention.
+3. **`specialArgs` goes away.** The pattern names it as an anti-pattern, and this
+   repository is a live example: `user`, `gitname` and `gitmail` are threaded
+   through `specialArgs` *and* `extraSpecialArgs`, which is why they had to be
+   deduplicated into `homeArgs` one entry above. That fix was local; declaring
+   options instead removes the class of problem.
+
+### Exit criteria
+
+**Keep it if all of these hold.**
+
+- Both flavours produce **byte-identical** store paths to the ones this branch
+  started from. A restructure that changes behaviour is not a restructure, and
+  this is the invariant that makes the claim checkable rather than argued:
+
+  ```
+  standalone  /nix/store/q2dccd1c3yjnkcij0r9blxwpyx3ldzqp-home-manager-generation
+  nixos       /nix/store/rq1nr1kr8l3gdiyzrry6lvzsjxq9v65w-nixos-system-nixos-26.11.20260801.148bab9
+  ```
+
+- The containment rule is enforced by the structure rather than by a comment: it
+  must be possible to point at the single place that decides whether a fragment
+  reaches standalone.
+- `tool/checks/test` still enumerates both configurations and still reports
+  coverage, with no new host assumptions.
+- `flake.lock` gains only the new inputs and their transitive nodes. Existing
+  pins must not move — adding inputs is not an excuse to update the others.
+
+**Revert it if any of these turn out to be true.**
+
+- Auto-import makes "what sets this option?" materially harder than reading an
+  `imports` list did. This repository's habit is that a reader can trace a
+  setting to its cause; a pattern that trades that away for brevity is the wrong
+  trade here.
+- The two new inputs (`flake-parts`, `import-tree`) cost more in evaluation time
+  or lock churn than the structure returns.
+- The pattern needs option declarations whose only purpose is to satisfy the
+  pattern. Its own list of anti-patterns includes exactly that, and an
+  `enable` flag for a feature this machine always has is the likely form.
+
+### Cost accepted going in
+
+The payoff scales with hosts × features, and there is one host. So the honest
+case for doing it now is not this month's convenience — it is that the layout has
+already produced two defects of the same shape, and that a restructure is
+cheapest before there is more to move.
+
+### Result: kept, and the store-path criterion was not met
+
+**A pure restructure cannot be hash-stable, and the reason is worth keeping.**
+The criterion above asked for byte-identical store paths. Neither flavour
+produced one:
+
+```
+standalone  q2dccd1c…  ->  b1z4n0im…
+nixos       rq1nr1kr…  ->  wggsi64v…
+```
+
+Every difference traces to one cause. `home.packages` is a **list**, list-valued
+options merge in module evaluation order, and import-tree's collection order is
+not the order the hand-written `imports` lists happened to have. The package
+*set* is unchanged — 42 entries in both, `diff` on the sorted names is empty —
+but `noto-fonts-cjk-sans` moved from position 19 to position 1, which changes the
+`buildEnv` input list, which changes the profile's hash, which changes every
+generated file that embeds the profile path, which changes the generation.
+
+The full extent of it, measured rather than assumed:
+
+| What differs | Why |
+| --- | --- |
+| `home.packages` order | module merge order; the set is identical |
+| profile hash | `buildEnv` takes the list as input |
+| `10-hm-fonts.conf` | embeds the profile path — identical once that path is masked |
+| fontconfig cache filenames | their names are hashes of the font directory path |
+| NixOS `home-manager-user1.service` | one `ExecStart=` line naming the generation |
+| `.zshrc`, three lines | a comment naming a moved file, updated on purpose |
+
+Nothing else. Every other generated file is byte-identical, and every symlink
+target inside both profiles matches. The `_class`/`_file` wrapper on the module
+option was suspected and cleared — removing it entirely changed no hash.
+
+So the criterion was the right instrument and the wrong threshold: it caught a
+real difference, and the difference turned out to be an ordering artefact with no
+behavioural content. **The generalisation is what to keep**: for any option whose
+type is a list, a hash is a function of module order, so "prove the restructure
+changed nothing" cannot be done by comparing store paths alone. Compare the
+built trees and the option's *set*. Written down here because the next
+restructure will hit it again and the first instinct will be to hunt for a real
+change that is not there.
+
+One deviation from the pattern's usual spelling. Fragments live in a top-level
+`modules` option rather than `flake.modules`, because making them flake outputs
+adds `warning: unknown flake output 'modules'` to every `nix flake check` — every
+hook, every CI run. This repository already carries one such warning and treats
+it as a cost. Exporting them later is one line, and flake-parts' `touchup` module
+is the other way out.
 
 ---
 

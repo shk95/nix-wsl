@@ -39,15 +39,26 @@ is always the same: run the command again outside the sandbox and compare. See
   experiment produced nothing, because the config itself is disposable and the
   lesson will not survive being rewritten. Record it in
   `docs/troubleshooting.md`.
-- **`home/` belongs to both flavours; put standalone-only things in
-  `home/standalone.nix` and NixOS-only things in `system/`.** The containment
-  runs one way and reads backwards: NixOS-WSL is a *superset* — it can express
-  everything home-manager can, plus `users.*`, `services.*` and the rest, none
-  of which standalone has any equivalent for. So a change written against the
-  NixOS flavour can quietly become impossible to run standalone, while a change
-  written in `home/` runs under both. Standalone is not a test rig being phased
-  out; it is the only thing that works on a machine whose distro you cannot
-  replace.
+- **A file under `modules/` says which flavours it reaches by the option it
+  writes to, not by where it sits.** Every file there is a flake-parts module,
+  collected automatically, and contributes to one of three names:
+  `modules.homeManager.shared` (both flavours), `modules.homeManager.standalone`
+  (standalone only), `modules.nixos.wsl` (NixOS only). What imports which is
+  decided in exactly one file, `modules/flake/configurations.nix`.
+
+  The containment runs one way and reads backwards: NixOS-WSL is a *superset* —
+  it can express everything home-manager can, plus `users.*`, `services.*` and
+  the rest, none of which standalone has any equivalent for. So a fragment
+  written for `nixos` can quietly become impossible to run standalone, while one
+  written for `homeManager.shared` runs under both. Standalone is not a test rig
+  being phased out; it is the only thing that works on a machine whose distro you
+  cannot replace, and `homeManager.shared` is the whole of it.
+
+  This is why **packages belong to home-manager rather than the system layer**.
+  `useUserPackages = true` already folds them into the NixOS closure, so moving
+  one to `environment.systemPackages` buys availability to root and costs
+  standalone the package outright. The test for anything new: would standalone
+  still work if this lived only in `modules/wsl.nix`?
 - **Keep the scope at WSL.** Everything here targets `x86_64-linux`, and
   `tool/checks/test` assumes it — a configuration for another system is
   refused outright rather than half-verified. Adding one is not a small
@@ -60,9 +71,9 @@ is always the same: run the command again outside the sandbox and compare. See
   *building* (`tool/checks/test`), which proves the same evaluation without
   touching the machine.
 - **The unix account and the git identity are separate.** `user = "user1"` is
-  the login on this host; `gitname = "shk"` is who commits are authored by.
-  They are different variables in `flake.nix` on purpose. Fusing them makes
-  every commit look like it came from a machine account.
+  the login on this host; `gitName = "shk"` is who commits are authored by.
+  They are separate declared options in `modules/flake/identity.nix` on purpose.
+  Fusing them makes every commit look like it came from a machine account.
 - **`flake.lock` is the pin.** Reproducibility is the entire point here, so it
   is committed and never ignored. `nix flake update` is a deliberate act, not
   housekeeping — it is not on the pre-approved command list.
@@ -108,7 +119,7 @@ switch-shell`, which needs a password twice — `sudo` to register the shell in
 `/etc/shells`, then `chsh` — so an agent cannot run it.
 
 **`~/.bashrc` is not managed and still holds the conda, SDKMAN and opencode
-hooks it always did.** The same hooks are declared in `home/shell.nix` for zsh.
+hooks it always did.** The same hooks are declared in `modules/shell.nix` for zsh.
 Changing one does not change the other, and bash stays a working fallback on
 purpose — if zsh ever fails to start, that is what you land in.
 
@@ -133,10 +144,10 @@ Concurrent `nix build` runs are fine — the daemon serialises the store.
 
 | Path | What lives there |
 | --- | --- |
-| `flake.nix` | Inputs, and the `homeConfigurations.user1` output |
-| `home/` | home-manager modules, shared by both flavours; `programs/` is one file per program |
-| `home/standalone.nix` | The standalone-only part — not imported by `home/default.nix` |
-| `system/` | NixOS modules for `nixosConfigurations.wsl`; standalone cannot have these |
+| `flake.nix` | Inputs, and one line handing `modules/` to flake-parts. Nothing else |
+| `modules/*.nix` | One file per feature. Each contributes to `modules.homeManager.shared`, `.standalone`, or `modules.nixos.wsl` |
+| `modules/flake/` | The wiring: identity, nixpkgs config, the two configurations, the devShell |
+| `modules/flake/configurations.nix` | **The only place** that decides which fragments reach which flavour |
 | `tool/checks/` | What the git hooks and CI both run |
 | `tool/doctor.sh` | Whether this machine can build, check and commit |
 | `Justfile` | Day-to-day commands |

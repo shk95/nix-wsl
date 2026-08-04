@@ -11,15 +11,15 @@
 #   nixosConfigurations.wsl.config.fonts.packages               [ ]
 #
 # Zero fonts, so Korean has nothing to resolve to at all and every CJK glyph is
-# a box. Declaring it in `home/` rather than `system/` is deliberate: it is the
-# flavour with the problem that gains, and the flavour without one loses
+# a box. Contributed to `homeManager.shared` rather than to `nixos.wsl` deliberately: it
+# is the flavour with the problem that gains, and the flavour without one loses
 # nothing.
 #
 # **What Nix cannot fix.** The terminal. Windows Terminal renders with a Windows
 # font chosen in its own settings.json, and a font in the Linux store is not
 # visible to it — installing 194 MiB of Nerd Font here would not change one
 # glyph in the terminal. So the prompt is written not to need one (see the
-# emoji in home/starship.nix), and the Windows-side step is documented where it
+# emoji in modules/starship.nix), and the Windows-side step is documented where it
 # will be looked for: docs/troubleshooting.md, under the symptom.
 #
 # Noto rather than Ubuntu's Nanum: it covers Korean, Japanese and Chinese in one
@@ -40,10 +40,12 @@
 # `monospace` and cannot change `sans-serif`, because KR is not a candidate to
 # promote. It was dropped rather than shipped half-working — Hangul is identical
 # across the five, so nothing about 한글 depends on which one wins.
-{pkgs, ...}: {
-  # Generates the fontconfig that makes the profile's fonts discoverable. Without
-  # it the packages below are in the store and invisible.
-  fonts.fontconfig.enable = true;
+_: {
+  modules.homeManager.shared = {pkgs, ...}: {
+    # Generates the fontconfig that makes the profile's fonts discoverable. Without
+    # it the packages below are in the store and invisible.
+    fonts.fontconfig.enable = true;
 
-  home.packages = [pkgs.noto-fonts-cjk-sans];
+    home.packages = [pkgs.noto-fonts-cjk-sans];
+  };
 }

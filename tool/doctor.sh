@@ -41,7 +41,7 @@ else
   case "$err" in
     *"experimental Nix feature"*)
       bad "nix-command/flakes not enabled by default" \
-          'export NIX_CONFIG="experimental-features = nix-command flakes" until the first home-manager switch writes it for you (see home/nix.nix)'
+          'export NIX_CONFIG="experimental-features = nix-command flakes" until the first home-manager switch writes it for you (see modules/nix-conf.nix)'
       ;;
     *)
       # nix prints a chain, opening with a bare "error:" and putting the root

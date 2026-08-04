@@ -111,6 +111,26 @@ and an untracked `flake.nix`. Each of these used to be reported as
 "nix-command/flakes not enabled by default", which sent you to a variable that
 could not help.
 
+### CI fails on a path that exists on your machine
+
+```
+error: path '«git+file://…?ref=…&rev=…»/home/programs/<file>.nix' does not exist
+```
+
+The file is `git add`-ed but never committed. A flake reads the *working tree*
+of a dirty repository, so `tool/checks/test` — and therefore the `pre-push`
+hook — sees it and passes. CI checks out the commit, where only the *reference*
+to it landed. `git status` shows it as `A ` rather than untracked, which is easy
+to read past.
+
+A file that is untracked entirely does not do this: flakes refuse to see it and
+the local build fails first, with `Path '…' is not tracked by Git` above.
+
+```sh
+git log --stat -1          # what actually went into the commit
+git diff --cached --stat   # what is still only staged
+```
+
 ### `git push` fails with the same `nix-command is disabled` message
 
 Not a git problem, and nothing in the output says a hook ran. `pre-push`

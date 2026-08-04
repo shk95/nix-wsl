@@ -40,6 +40,12 @@ It reports what is missing and how to fix each item. On a host where flakes are
 not enabled globally it fails with a ✗ and prints the workaround — that is
 correct, not a bug.
 
+It distinguishes that from a probe it could not run at all. *Could not ask the
+flake whether nix-command works* means something else blocked the check — no
+network, an untracked `flake.nix`, a read-only `~/.cache/nix` — and the rest of
+the line is the cause. Exporting `NIX_CONFIG` will not help there, which is
+why the two no longer share a message.
+
 **4. Bootstrap home-manager.** Only needed the first time. Note that this is
 not `just bootstrap`: `just` is one of the packages this configuration
 installs, so on a fresh machine it is no more present than `home-manager` is.

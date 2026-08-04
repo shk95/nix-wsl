@@ -111,6 +111,50 @@ and an untracked `flake.nix`. Each of these used to be reported as
 "nix-command/flakes not enabled by default", which sent you to a variable that
 could not help.
 
+### `wsl: Failed to start the systemd user session for '<user>'.`
+
+Printed on entering a second WSL distribution. It is **not** a bug in that
+distribution, and chasing it there wastes the afternoon. In the journal:
+
+```
+systemd[1]: user@1000.service: Failed to spawn executor: Device or resource busy
+systemd[1]: user@1000.service: Failed with result 'resources'.
+```
+
+**All WSL distributions share one cgroup v2 hierarchy.** Confirmed rather than
+inferred — `/sys/fs/cgroup` reports the same `st_dev` from both distros, and
+from inside the failing one you can see the *other* distro's delegated subtree,
+already populated:
+
+```
+$ cat /proc/387/cgroup                     # Ubuntu's systemd --user
+0::/user.slice/user-1000.slice/user@1000.service/init.scope
+# and from inside NixOS, the same path:
+  session.slice  init.scope   ← 3 processes, none of them ours
+```
+
+So two distributions whose default user is UID 1000 both want
+`/user.slice/user-1000.slice/user@1000.service`. Whichever booted first owns it;
+the second gets `EBUSY`. The control experiment settles it — in the failing
+distro, a UID nobody else has claimed starts fine:
+
+```
+user@0.service    (UID 0,    unclaimed)      → active
+user@1000.service (UID 1000, held by Ubuntu) → failed
+```
+
+**What it costs.** System units are unaffected; `systemctl is-system-running`
+reports `degraded` only because of this and `getty@tty1`, which has no tty in
+WSL and always fails. What breaks is the *user* level: no user D-Bus socket, so
+`systemctl --user` is unusable and any home-manager systemd user service will
+not start.
+
+**What to do.** Give the second distribution's user a different UID
+(`users.users.<name>.uid`), so the paths do not collide; or run only one of them
+at a time; or wait for WSL to isolate per-distro cgroups —
+[microsoft/WSL#40519](https://github.com/microsoft/WSL/pull/40519), not present
+in WSL 2.7.11.0. The UID workaround is untested here.
+
 ### `wsl --import` will not read the image from `\\wsl.localhost\...`
 
 The obvious way to import a rootfs built inside WSL is to point at it where it

@@ -7,6 +7,7 @@ _: {
   # `./standalone.nix`, which only the standalone flavour imports — see the
   # comment at the top of that file for what that means and why.
   imports = [
+    ./fonts.nix
     ./packages.nix
     ./shell.nix
     ./starship.nix

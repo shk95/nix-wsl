@@ -227,6 +227,41 @@ explicitly (keeps the old behaviour, silences the warning) or bump
 what else changes with it — pinning is the lower-risk fix in the middle of
 unrelated work.
 
+### Korean renders as boxes in the terminal, and declaring a font changes nothing
+
+Because the terminal's font is not a Linux setting. Windows Terminal draws with
+a font named in its own `settings.json` and reads it from Windows — a font in
+the Nix store is invisible to it, so `home/fonts.nix` cannot fix this and adding
+a Nerd Font there would only spend 194 MiB proving it.
+
+The fix is on the Windows side, in the profile's font, as a fallback list:
+
+```json
+"font": { "face": "Cascadia Mono, Malgun Gothic" }
+```
+
+`settings.json` is at
+`%LOCALAPPDATA%\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json`.
+The second name is what covers Hangul when the first does not; without a
+fallback the terminal substitutes per-glyph and the row's metrics stop lining up,
+which is the misalignment that usually gets described as breakage rather than
+the boxes themselves.
+
+**Check which side you are actually on.** If GUI applications under WSLg render
+Korean and the terminal does not, it is the terminal, and nothing in this
+repository is involved:
+
+```sh
+fc-match 'sans-serif:lang=ko'      # what Linux resolves Korean to
+```
+
+That command answering `Noto Sans CJK JP` is not the bug — see the comment in
+`home/fonts.nix` for why the family name says JP while the coverage is Korean.
+
+Nothing answering at all is a real gap, and it is the NixOS-WSL case:
+`fonts.enableDefaultPackages` is `false` and `fonts.packages` is empty there, so
+that flavour has no font of any kind until one is declared.
+
 ---
 
 ## The agent sandbox

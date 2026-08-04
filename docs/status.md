@@ -330,6 +330,28 @@ reads the refs git hands it on stdin and skips when all of them are deletions.
 Fixed upstream in project-scaffold's core as well; both were found here, on the
 first tidy-up after a merge.
 
+**Sharing `home/` between the flavours did not make them agree.** The point of
+the shared directory is that one set of modules is evaluated under both, so
+neither drifts. It does not cover what they are evaluated *with*:
+`allowUnfree = true` was written inline in the standalone `import nixpkgs`, and
+the NixOS flavour builds its own pkgs from `nixpkgs.config`, so the same
+`home/` was evaluated under two different nixpkgs configurations.
+
+```
+standalone  true
+nixos-wsl   false
+```
+
+Nothing in `home/` needs an unfree package, which is why it survived review:
+the first one added would have built standalone, failed under NixOS, and given
+no hint that the *flavour* was the variable. Both now read one `nixpkgsConfig`
+in the flake's `let`, and the arguments `home/` receives are defined once as
+`homeArgs` for the same reason. Worth generalising: sharing a module directory
+makes drift in the modules impossible and drift in their *arguments* invisible,
+so anything passed in from `flake.nix` needs a single definition rather than a
+matching pair. Found by asking what the two flavours disagreed on, not by
+anything failing.
+
 ---
 
 ## Traps that will recur

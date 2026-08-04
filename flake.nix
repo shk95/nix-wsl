@@ -32,9 +32,25 @@
     gitname = "shk";
     gitmail = "101378576+shk95@users.noreply.github.com";
 
+    # One nixpkgs configuration, read by both flavours. It used to be written
+    # inline in the `import nixpkgs` below, which reached the standalone flavour
+    # only: `nixosConfigurations.wsl` builds its own pkgs from `nixpkgs.config`
+    # and so evaluated the *shared* `home/` with allowUnfree = false. Nothing in
+    # `home/` needs an unfree package today, which is exactly why it went
+    # unnoticed — the first one added would have built standalone and failed
+    # under NixOS, for no visible reason.
+    nixpkgsConfig = {
+      allowUnfree = true;
+    };
+
+    # What `home/` expects to be handed. Defined once for the same reason: it is
+    # imported by both flavours, so the two must agree on the arguments or one
+    # of them stops evaluating.
+    homeArgs = {inherit user gitname gitmail;};
+
     pkgs = import nixpkgs {
       inherit system;
-      config.allowUnfree = true;
+      config = nixpkgsConfig;
     };
   in {
     # Standalone: no system layer, so this is what runs on a machine whose
@@ -42,7 +58,7 @@
     # below; `./home/standalone.nix` is the part that only makes sense here.
     homeConfigurations.${user} = home-manager.lib.homeManagerConfiguration {
       inherit pkgs;
-      extraSpecialArgs = {inherit user gitname gitmail;};
+      extraSpecialArgs = homeArgs;
       modules = [./home ./home/standalone.nix];
     };
 
@@ -58,13 +74,20 @@
         home-manager.nixosModules.home-manager
         ./system
         {
+          # `useGlobalPkgs` makes home-manager use this system's pkgs rather
+          # than importing its own, so this is the only place the shared
+          # `home/` can be told about allowUnfree — the equivalent
+          # `nixpkgs.config` under home-manager is refused outright when
+          # `useGlobalPkgs` is on.
+          nixpkgs.config = nixpkgsConfig;
+
           # The same `./home` the standalone flavour uses. Sharing it here is
           # the whole point: one set of modules, evaluated under both, so
           # neither drifts from the other by neglect.
           home-manager = {
             useGlobalPkgs = true;
             useUserPackages = true;
-            extraSpecialArgs = {inherit user gitname gitmail;};
+            extraSpecialArgs = homeArgs;
             users.${user} = ./home;
           };
         }

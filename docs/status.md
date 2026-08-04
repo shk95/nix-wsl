@@ -248,6 +248,31 @@ sandbox and compare. `warning: unable to access '.gitmodules': Permission
 denied`, emitted by git commands that otherwise work, is the same cause showing
 through.
 
+**The `pre-push` hook and CI do not check the same artifact.** The hook runs
+`tool/checks/test`, which builds `.#`, and for a dirty repository a flake reads
+the *working tree*. CI checks out the *commit*. So the obvious economy — "it
+built locally on a single-host repo, why build it again" — rests on the two
+being the same thing, and they are not. Demonstrated rather than argued, on a
+fresh clone:
+
+```
+home/programs/default.nix   imports ./demo.nix   committed
+home/programs/demo.nix      git add-ed, never committed
+
+hook  (working tree)  nix eval .#…drvPath                 PASS  -> push proceeds
+CI    (the commit)    nix eval git+file://…?ref=HEAD#…     FAIL
+                      error: path '…/home/programs/demo.nix' does not exist
+```
+
+An untracked file is not this bug — flakes refuse to see it, so the local build
+fails too and you find out immediately. The dangerous state is *staged but not
+committed*, which flakes do see, and which is what half a repository looks like
+during ordinary work. Add the two other things CI backstops — a clone has no
+hooks until `core.hooksPath` is set, and `--no-verify` exists — and the answer
+is that CI's value is real but it is **per repository, not per configuration**.
+One configuration built from a clean checkout proves the commit is complete;
+the second one proves it again for a great deal more money.
+
 **A ticked box outlived the code it was ticked against.** M1 was verified by
 cloning on 2026-08-03. Twenty-two commits later every file that verification
 exercises had been rewritten — all three hooks, all three checks,
@@ -320,11 +345,32 @@ needs a FlakeHub account, and measured at 6m39s against 1m23s without). So a
 600 MiB download on every pull request, for a configuration nothing can
 activate from here.
 
-That is the question to settle before writing any of it: does the entry live on
-`dev`, or on a long-lived experiment branch until it has earned the cost? A
-third option is that `tool/checks/test` learns to evaluate a flavour without
-building it — but that weakens the two-tier model deliberately, and weakening
-it needs its own decision rather than being a side effect of an experiment.
+The obvious economy is to drop CI's build and trust the local one, since this
+is a single-host repo and Nix is deterministic. That was tested and it does not
+hold — the hook builds the working tree and CI builds the commit, and the entry
+under **Bugs worth remembering** shows a case where the first passes and the
+second fails. But the same test says something useful for this decision: what
+CI proves is *per repository*, not per configuration. One configuration built
+from a clean checkout already proves the commit is complete. A second one buys
+almost nothing at 615 MiB a run.
+
+**A third tier makes that affordable.** `nix build --dry-run` resolves the whole
+closure — every path must be substitutable or buildable — and downloads
+nothing. Measured on the NixOS-WSL toplevel here:
+
+| tier | what it proves | cost |
+| --- | --- | --- |
+| eval — force `.drvPath` | options, types, assertions, imports | 7s |
+| **dry-run** | the closure resolves; every package exists | **9s** |
+| build | derivations actually build | 615.5 MiB, 169 built |
+
+Two seconds over eval to establish that nothing in a 255-path closure is
+missing. That is not the two-tier model weakened, it is the gap between its
+tiers filled — and it makes "evaluate every flavour, build the ones this host
+can activate" a defensible rule rather than a corner cut. The recommendation is
+therefore: NixOS-WSL enters on `dev` with eval + dry-run in CI, build stays
+local. It still needs deciding rather than assuming, because it changes
+`tool/checks/test`, which is shared with the overlay.
 
 **Reversibility, measured.** NixOS-WSL is installed with `wsl --import`, which
 registers a *new* distribution; it does not convert or replace an existing one.

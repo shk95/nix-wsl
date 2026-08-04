@@ -357,12 +357,25 @@ by watching the real run rather than by reading the script:
 
 Removing it needs `sudo rm`, since the builder runs as root.
 
-The remaining step is on the Windows side:
+**The image has to be staged onto a Windows drive first.** `wsl --import` will
+not take a UNC source, which is not obvious because the path itself is
+perfectly readable — `dir \\wsl.localhost\...` and `dir \\wsl$\...` both list
+the file. It is the importer that refuses, so the natural one-step version of
+this fails for a reason that looks like a path problem and is not. In
+`troubleshooting.md` under its symptom.
+
+`just nixos-stage` copies it to `C:\WSL\`, checks the copy is still a complete
+gzip stream, and prints the command with the Windows path filled in. Four
+seconds over drvfs. Then, from PowerShell or CMD:
 
 ```
-wsl --import NixOS <install-dir> \\wsl.localhost\Ubuntu-26.04\home\user1\github_prj\nix-wsl\nixos.wsl
+wsl --import NixOS C:\WSL\NixOS C:\WSL\nixos.wsl
 wsl -d NixOS
 ```
+
+There are now two copies of a 576 MB file, one in the repo and one on `C:`.
+Both are disposable once the distribution is registered; the repo one needs
+`sudo rm`.
 
 The numbers below are what shaped the design, and they were cheaper to get than
 to undo.

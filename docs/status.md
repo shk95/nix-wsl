@@ -421,6 +421,13 @@ nixosConfigurations.probe   eval ✓ build — not activatable here (615.5 MiB d
 flavour actually changes. `--dry-run` survives only to produce that size, which
 is information rather than verification.
 
+**It worked, and the number is the point of the whole detour.** The first CI run
+carrying `nixosConfigurations.wsl` took **100s against a 78s baseline** — 22
+seconds for a second flavour, where building it would have meant a 600 MiB
+download on an empty store every run. The rule was worth establishing before
+the configuration landed rather than after, which is the only reason the
+groundwork came first.
+
 **Reversibility, measured.** NixOS-WSL is installed with `wsl --import`, which
 registers a *new* distribution; it does not convert or replace an existing one.
 This machine currently has:

@@ -11,9 +11,12 @@ and the checks assume everything targets `x86_64-linux`.
 | `homeConfigurations.user1` | Standalone home-manager. No system layer, so it runs on **any** WSL distro that has Nix — including one you are not allowed to replace. |
 | `nixosConfigurations.wsl` | NixOS-WSL. Adds everything standalone cannot reach: services, system packages, the login shell, `/etc`. |
 
-Neither is the junior partner. `home/` is written once and evaluated under both,
-`home/standalone.nix` is the part that only makes sense with no system layer
-beneath it, and `system/` is the part standalone has no option for at all.
+Neither is the junior partner. Every file under `modules/` is one feature, and
+says which flavours it reaches by the option it writes to rather than by where it
+sits: `modules.homeManager.shared` goes to both, `modules.homeManager.standalone`
+only where there is no system layer beneath it, and `modules.nixos.wsl` only to
+the flavour that has one. `modules/flake/configurations.nix` is the only place
+that decides.
 
 It exists to try things and to learn Nix, so `docs/troubleshooting.md` and the
 decision notes in `docs/status.md` matter more here than the configuration
@@ -100,10 +103,9 @@ itself.
 
 | Path | What lives there |
 | --- | --- |
-| `flake.nix` | Inputs, `homeConfigurations.user1` and `nixosConfigurations.wsl` |
-| `home/` | home-manager modules, shared by both flavours; `programs/` is one file per program |
-| `home/standalone.nix` | The part that only makes sense with no system layer under it |
-| `system/` | NixOS modules; things standalone has no option for at all |
+| `flake.nix` | Inputs, and one line handing `modules/` to flake-parts |
+| `modules/*.nix` | One file per feature, collected automatically |
+| `modules/flake/` | Identity, nixpkgs config, the two configurations, the devShell |
 | `tool/` | The environment doctor, the checks, the worktree helper |
 | `docs/` | What "done" means, current state, and findings worth grepping |
 | `Justfile` | Day-to-day commands |

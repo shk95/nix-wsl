@@ -113,6 +113,10 @@ could not help.
 
 ### `cat: /proc/sys/fs/binfmt_misc/WSLInterop: No such file or directory`
 
+> If you are a person and just want it working again, read
+> `docs/wsl-interop.md` instead — one page, fix at the top. The rest of this
+> entry is the mechanism.
+
 Equivalently, and how you will actually meet it: every Windows executable stops
 working from Linux, with
 

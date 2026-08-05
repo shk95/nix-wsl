@@ -169,3 +169,4 @@ Concurrent `nix build` runs are fine — the daemon serialises the store.
 | `docs/definition-of-done.md` | What "finished" means, per milestone |
 | `docs/status.md` | Current state and the decisions behind it |
 | `docs/troubleshooting.md` | Errors that already cost someone an afternoon. Grep, don't read |
+| `docs/wsl-interop.md` | One page for a person, when `.exe` stops working. Read it whole |

@@ -28,6 +28,59 @@ in {
     # docs/troubleshooting.md under WSL's message.
     users.users.${user}.uid = 2000;
 
+    # The second shared-kernel collision, and the same shape as the UID one
+    # above — except this one breaks the *other* distribution rather than this
+    # one, which is why it took a day to attribute.
+    #
+    # Every WSL distribution also shares one `binfmt_misc` registry. WSL's
+    # interop — running `.exe` from Linux — is one entry in it,
+    # `:WSLInterop:M::MZ::/init:P`, registered by whichever distro booted first.
+    # It is global state that no distro owns and any distro can empty.
+    #
+    # Upstream defaults `wsl.interop.register` to false, commented "use the
+    # existing registration". That is a bet that somebody else registered
+    # WSLInterop and will keep it registered. On 2026-08-04 the bet lost: this
+    # flavour was imported and booted, and Ubuntu could not exec a `.exe`
+    # afterwards — for a day, across no reboot, until the entry was written back
+    # by hand. The registry was not merely missing WSLInterop, it was *empty*;
+    # Ubuntu's unrelated `python3.14` entry had gone too. That is a flush of the
+    # whole registry (`-1` into `.../binfmt_misc/status`), not a delete of one
+    # entry, and nothing in Ubuntu ran one.
+    #
+    # So: own the registration rather than consume one we did not declare. This
+    # writes /etc/binfmt.d/nixos.conf and pulls in systemd-binfmt.service, which
+    # puts the entry back on every boot of this distro.
+    #
+    # What it writes is *not* WSL's line. nixpkgs routes every interpreter
+    # through a tmpfiles symlink, so the entry reads
+    #
+    #   :WSLInterop:M::MZ::/run/binfmt/WSLInterop:PF   (+ L+ /run/binfmt/WSLInterop → /init)
+    #
+    # and `/run/binfmt/WSLInterop` exists only in *this* distro's mount
+    # namespace. That looks like a bug for a registry every distro reads, and it
+    # is why the `F` in `PF` is load-bearing rather than tidy: `fixBinary` makes
+    # the kernel open the interpreter once, at registration, and exec the pinned
+    # inode with no path lookup afterwards. Without it a process in another
+    # distro would resolve that path in its own namespace, find nothing, and be
+    # no better off than before. Do not "simplify" this to interpreter = "/init".
+    wsl.interop.register = true;
+
+    # ...and, having taken the unit, disarm its stop action. Upstream's
+    # systemd-binfmt.service carries `ExecStop=systemd-binfmt --unregister`,
+    # which is that same whole-registry flush — it does not unregister only what
+    # this distro added, because binfmt_misc offers no way to ask for that. In a
+    # registry shared with every other running distribution, that is somebody
+    # else's state being discarded at our shutdown.
+    #
+    # WSL knows: it generates precisely this override into
+    # /run/systemd/generator/systemd-binfmt.service.d/override.conf on the
+    # Ubuntu side, headed "to prevent binfmt.d from overriding WSL's binfmt
+    # interpreter", and offers `[boot] protectBinfmt` in wsl.conf to turn it
+    # off. Declaring it here rather than relying on that generator having fired
+    # inside this distro, which is not something the flush evidence lets us
+    # assume.
+    systemd.services.systemd-binfmt.serviceConfig.ExecStop = [""];
+
     # Deliberately almost empty. The experiment is whether a system layer earns
     # its place, and starting it with packages and services already moved in
     # would answer that question by assumption. What belongs here is what

@@ -620,6 +620,55 @@ and keeps running throughout, and rollback is `wsl --unregister <name>`. The
 machine-side risk is genuinely low; the repository-side cost above is the real
 constraint, and they should not be confused for each other.
 
+### That last paragraph was wrong, and finding out cost a day
+
+**"Untouched and keeps running throughout" is false.** Booting the imported
+distribution on 2026-08-04 broke Windows interop *in Ubuntu* — every `.exe`
+failed with `exec format error` — and it stayed broken for a day, across no
+reboot, until the registration was written back by hand on 2026-08-05. Nothing
+in Ubuntu had changed.
+
+**Why it was mis-attributed.** The two things that had changed on the Ubuntu
+side that week were the home-manager activation and the bash→zsh login shell
+switch, so both were suspected first. Neither can touch `binfmt_misc`; it is a
+kernel-global registry that a user-level generation has no access to. The
+timeline is what settles it — interop was healthy at 13:28, the NixOS
+distribution booted at 13:49, and the first `exec format error` is at 14:30,
+with nothing else in the journal in between.
+
+**A third shared-kernel resource, after cgroups.** WSL2 gives every distribution
+its own mount and PID namespaces but one kernel, and `binfmt_misc` is global to
+it. The registry is not merely shared, it is *unowned*: `binfmt_misc` has no
+selective unregister, so the only bulk operation available — `-1` into
+`.../binfmt_misc/status` — empties everyone's entries at once. That is what
+`systemd-binfmt --unregister` does, and it is upstream's `ExecStop=` for
+`systemd-binfmt.service`. Confirmed rather than inferred: Ubuntu's unrelated
+`python3.14` registration had gone too, so this was a flush and not a delete.
+
+Ubuntu is protected — WSL generates a drop-in clearing that `ExecStop` and
+re-registering afterwards, and offers `[boot] protectBinfmt` to disable it. But
+a drop-in in one distribution only guards that distribution's copy of the unit.
+Nothing guards the registry.
+
+**What is declared now.** `modules/wsl.nix` sets `wsl.interop.register = true`
+and clears `ExecStop` on `systemd-binfmt.service`, so this flavour registers its
+own entry on boot and never flushes anyone's. NixOS-WSL defaults that option to
+false, commented "use the existing registration" — a bet that another
+distribution registered `WSLInterop` and will keep it registered, which is
+precisely the bet that loses when two distributions run. The design consequence
+is the same shape as the UID one: **a fragment can be correct in isolation and
+still be wrong because another distribution is running**, and neither failure
+is visible from inside the distribution that causes it.
+
+**Unverified.** Both settings build; neither has been observed at runtime,
+because that needs a fresh tarball, a re-import and a person. Tracked as a
+blocked issue. Note in particular that with `wsl.interop.register` on, nixpkgs
+writes `:WSLInterop:M::MZ::/run/binfmt/WSLInterop:PF` rather than WSL's
+`/init` — the interpreter is a tmpfiles symlink inside *this* distribution's
+`/run`, and the entry is only usable from another distribution because the `F`
+flag pins the inode at registration time. That reasoning is read off the
+generated closure, not off a running system.
+
 **Input hygiene.** NixOS-WSL pins its own nixpkgs (`e7a3ca8`, 2026-07-11),
 which is not ours. Without `inputs.nixos-wsl.inputs.nixpkgs.follows = "nixpkgs"`
 the flake evaluates two of them. The probe above used `follows` and the

@@ -871,6 +871,59 @@ which is the statement immediately after `disable_binfmt()` in `shutdown.c`. So
 `systemd-shutdown` ran, called it, and the writability guard declined. That is
 the entire claim, observed end to end.
 
+### What the fix does and does not guarantee
+
+Worth stating precisely, because it is easy to read the result as broader than
+it is. **The fix is one-directional: it stops this flavour being a *cause*. It
+does not make it immune.**
+
+*Guaranteed.* This distribution never flushes the registry, so anything running
+alongside it is safe from it, whatever else is on the machine.
+
+*Not guaranteed.* Any **other** systemd distribution's shutdown still flushes,
+and that still breaks interop for everyone left running — including us.
+Concretely: `wsl --terminate Ubuntu` while NixOS is up costs NixOS its interop,
+and nothing here prevents that.
+
+**Which distributions can do it** is answerable at a glance. Only those running
+systemd have a `systemd-shutdown` to run the flush, and WSL says which in its own
+log line:
+
+```
+WSL (2 - init-systemd(NixOS))      ← has systemd. can flush
+WSL (1 - init(docker-desktop))     ← no systemd. cannot
+```
+
+So Docker Desktop's distribution, which is on this machine and starts and stops
+constantly, has never been a suspect and never will be.
+
+**Creation order is irrelevant**, which is the other thing worth being explicit
+about. It does not matter which distribution was made first, which is "main", or
+which registered the entry — the registry is per-VM-boot, and WSL's line names
+`/init` with `P` and no `F`, so it is resolved per namespace at exec time and one
+entry serves every distribution correctly. Only *runtime* start and stop order
+matters.
+
+**`wsl --shutdown` is harmless** for the same reason: it destroys the VM, so the
+registry goes with it and is rebuilt from scratch at the next start.
+
+**Self-healing still works here.** WSL's `/init` registers `WSLInterop` when a
+distribution launches, before systemd — that is the whole reason WSL needs its
+`protectBinfmt` drop-in, "to prevent binfmt.d from overriding WSL's binfmt
+interpreter". `wsl-binfmt-protect` runs at `multi-user.target`, long after, so
+this distribution keeps its own ability to restore the entry at boot. Inferred
+from that drop-in's wording rather than observed directly.
+
+**In practice, on this machine**, the exposure is now narrow: Ubuntu is the
+permanent home and rarely shuts down on its own, and the common case — start
+NixOS, poke at it, exit — is what was broken and is now fixed.
+
+**The real fix is upstream**, in one of two places: WSL isolating `binfmt_misc`
+per distribution, the way [microsoft/WSL#40519](https://github.com/microsoft/WSL/pull/40519)
+does for cgroups; or systemd declining the shutdown flush when it has already
+`Detected virtualization wsl`. Neither exists, and this repository is not the
+place to wait for them.
+
 **What this experiment leaves behind.** Not the unit — that is nine lines and
 disposable. The method: three attempts, and the two that failed were both
 reasoned from *observed behaviour* ("the entry disappears at teardown, so

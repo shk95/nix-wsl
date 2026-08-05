@@ -157,13 +157,29 @@ $ cat /proc/sys/fs/binfmt_misc/status
 enabled
 ```
 
-If unrelated entries went too — Ubuntu 26.04 registers `python3.14` from
-`/usr/lib/binfmt.d/python3.14.conf` at boot, so its absence is a good tell —
-then something wrote `-1` to `.../binfmt_misc/status`, which flushes *every*
-entry. `binfmt_misc` offers no way to unregister selectively, so the flush is
-the only thing `systemd-binfmt --unregister` can do, and that is upstream's
-`ExecStop=` for `systemd-binfmt.service`. Booting or shutting down a second
-systemd distribution is enough.
+There are two different ways entries disappear, they have different causes, and
+guessing between them wastes the afternoon. `systemd-binfmt` is the program to
+read — `src/binfmt/binfmt.c` and `src/shared/binfmt-util.c`:
+
+| | what it does | when |
+| --- | --- | --- |
+| `apply_rule()` | for each rule in `binfmt.d`, writes `-1` to `.../binfmt_misc/<name>` — a delete **by name** — and then registers its own | every `ExecStart` |
+| `disable_binfmt()` | writes `-1` to `.../binfmt_misc/status` — flushes **every** entry | only `--unregister`, i.e. `ExecStop` |
+
+So a `binfmt.d` rule named `WSLInterop` in *any* distribution does not add to
+the shared registry. It **deletes whatever is there and substitutes its own**.
+That is what WSL means by "overriding", and it is a takeover, not a merge.
+
+Tell the two apart by mtime, which survives when nothing else does:
+
+```
+$ stat -c '%n %y' /proc/sys/fs/binfmt_misc/register /proc/sys/fs/binfmt_misc/status
+register  2026-08-05 15:38:38     ← last registration
+status    2026-08-04 00:31:19     ← mount time; never written = never flushed
+```
+
+If `status` still carries the boot-time timestamp, no `--unregister` has ever
+run and you are looking at a by-name takeover, not a flush.
 
 Ubuntu is protected against its own copy of that unit and nobody else's. WSL
 generates the guard, which is worth reading because it documents the whole
@@ -194,16 +210,22 @@ echo ':WSLInterop:M::MZ::/init:P' | sudo tee /proc/sys/fs/binfmt_misc/register
 `wsl --shutdown` from Windows also fixes it — WSL re-registers at boot — but you
 cannot run that from inside, because `wsl.exe` is itself an `.exe`.
 
-**Stopping it recurring.** `modules/wsl.nix` now sets `wsl.interop.register` and
-clears `ExecStop` on `systemd-binfmt.service`, so this flavour registers its own
-entry and never flushes anyone's. NixOS-WSL defaults `wsl.interop.register` to
-false, commented "use the existing registration" — a bet that another distro
-registered WSLInterop and will keep it registered, which is exactly the bet that
-loses here. Note that with it on, nixpkgs writes
-`:WSLInterop:M::MZ::/run/binfmt/WSLInterop:PF` rather than WSL's `/init`: the
-interpreter is a tmpfiles symlink in *that distro's* `/run`, and only the `F`
-flag — open the interpreter at registration, exec the pinned inode with no path
-lookup — makes it resolvable from any other distro.
+**Stopping it recurring — not solved.** The obvious move is to have the second
+distribution register `WSLInterop` itself (`wsl.interop.register`) and stop it
+flushing on shutdown (`ExecStop=`). `modules/wsl.nix` does both. **It was tested
+on 2026-08-05 and interop still broke.** Do not spend the afternoon retrying it.
+
+Why it cannot work as stated: registering a rule of that name *takes the entry
+over* rather than adding one, per the table above. What nixpkgs substitutes is
+`:WSLInterop:M::MZ::/run/binfmt/WSLInterop:PF` — the interpreter is a tmpfiles
+symlink inside *that* distribution's `/run`, usable from elsewhere only because
+`F` pins the inode at registration time. So Ubuntu's own `/init:P` entry is
+destroyed and replaced by one whose lifetime is tied to a distribution that is
+about to be terminated or unregistered. That is strictly worse than leaving the
+registry alone.
+
+Until this is settled, treat it operationally: **run one distribution at a
+time**, and re-register by hand afterwards with the command above.
 
 **How to attribute it, if it happens again.** The registry keeps no history, so
 the journal is all there is. Interop's last known-good moment and the first

@@ -638,12 +638,12 @@ with nothing else in the journal in between.
 
 **A third shared-kernel resource, after cgroups.** WSL2 gives every distribution
 its own mount and PID namespaces but one kernel, and `binfmt_misc` is global to
-it. The registry is not merely shared, it is *unowned*: `binfmt_misc` has no
-selective unregister, so the only bulk operation available — `-1` into
-`.../binfmt_misc/status` — empties everyone's entries at once. That is what
-`systemd-binfmt --unregister` does, and it is upstream's `ExecStop=` for
-`systemd-binfmt.service`. Confirmed rather than inferred: Ubuntu's unrelated
-`python3.14` registration had gone too, so this was a flush and not a delete.
+it. The registry is not merely shared, it is *unowned* — and worse, the natural
+way to "add" to it is destructive. `systemd-binfmt`'s `apply_rule()` deletes the
+entry named by each `binfmt.d` rule and registers its own in its place, so a
+rule named `WSLInterop` in any distribution **takes the shared entry over**.
+Only `--unregister` (`ExecStop`) flushes wholesale, via `-1` into
+`.../binfmt_misc/status`.
 
 Ubuntu is protected — WSL generates a drop-in clearing that `ExecStop` and
 re-registering afterwards, and offers `[boot] protectBinfmt` to disable it. But
@@ -660,14 +660,57 @@ is the same shape as the UID one: **a fragment can be correct in isolation and
 still be wrong because another distribution is running**, and neither failure
 is visible from inside the distribution that causes it.
 
-**Unverified.** Both settings build; neither has been observed at runtime,
-because that needs a fresh tarball, a re-import and a person. Tracked as a
-blocked issue. Note in particular that with `wsl.interop.register` on, nixpkgs
-writes `:WSLInterop:M::MZ::/run/binfmt/WSLInterop:PF` rather than WSL's
-`/init` — the interpreter is a tmpfiles symlink inside *this* distribution's
-`/run`, and the entry is only usable from another distribution because the `F`
-flag pins the inode at registration time. That reasoning is read off the
-generated closure, not off a running system.
+### The fix was wrong, and the test said so
+
+Tested the same day, 2026-08-05, and **it does not work**. Recorded in full
+because a failed experiment is a perfectly good outcome and the next session
+must not retry it.
+
+**The test was real.** The tarball a person built at 15:28 resolves to the same
+store path as `nix build .#nixosConfigurations.wsl.config.system.build.tarballBuilder`
+on the fix branch, and embeds toplevel `cwkb59h…` — the one carrying both
+settings. So this is a negative result, not a stale build.
+
+**What the journal shows.** The NixOS distribution's own systemd logs into
+Ubuntu's journal, which is a piece of luck worth remembering:
+
+```
+proc-sys-fs-binfmt_misc.automount: Path /proc/sys/fs/binfmt_misc is already a mount point, refusing start.
+Starting Set Up Additional Binary Formats...      ← systemd-binfmt ran
+Finished Set Up Additional Binary Formats.        ← 16 ms, no warnings
+...
+systemd-binfmt.service: Deactivated successfully. ← stopped cleanly; ExecStop= worked
+```
+
+So both halves did exactly what they were written to do. Interop broke anyway.
+
+**Why the design is wrong, not merely incomplete.** Reading
+`systemd/src/binfmt/binfmt.c` after the fact instead of before it:
+`apply_rule()` deletes the entry by name and re-registers. Declaring a rule
+named `WSLInterop` therefore **destroys Ubuntu's entry and substitutes ours** —
+`:WSLInterop:M::MZ::/run/binfmt/WSLInterop:PF`, whose interpreter is a tmpfiles
+symlink in this distribution's `/run`, resolvable elsewhere only because `F`
+pins the inode. Ubuntu's `/init:P` is gone, replaced by something whose lifetime
+is tied to a distribution that is about to be terminated or unregistered. Taking
+ownership of shared state you are about to delete is worse than leaving it
+alone.
+
+There is a second hazard in the same change. systemd's comment on
+`disable_binfmt()` says the shutdown flush exists "to cover for rules using F,
+since those might pin a file and thus block us from unmounting stuff cleanly".
+WSL can disarm that flush for Ubuntu because WSL's rule is `P` with no `F`. Ours
+is `PF`. The change disarms the flush *and* introduces the pinning rule.
+
+**What is still not known.** Which moment does the damage — the NixOS boot, its
+shutdown, or `wsl --unregister` — is unresolved, and the run above cannot say,
+because nobody looked at the registry from Ubuntu in between. Only the
+unregister path was exercised; terminate was not. Note also that on this host
+`.../binfmt_misc/status` still carries its mount-time timestamp, which suggests
+no wholesale flush has ever run here and that every disappearance so far has
+been a by-name takeover.
+
+**Operationally, for now:** run one distribution at a time, and re-register by
+hand afterwards. `docs/troubleshooting.md` carries the command.
 
 **Input hygiene.** NixOS-WSL pins its own nixpkgs (`e7a3ca8`, 2026-07-11),
 which is not ours. Without `inputs.nixos-wsl.inputs.nixpkgs.follows = "nixpkgs"`

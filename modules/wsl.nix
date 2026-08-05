@@ -42,14 +42,20 @@ in {
     # WSLInterop and will keep it registered. On 2026-08-04 the bet lost: this
     # flavour was imported and booted, and Ubuntu could not exec a `.exe`
     # afterwards — for a day, across no reboot, until the entry was written back
-    # by hand. The registry was not merely missing WSLInterop, it was *empty*;
-    # Ubuntu's unrelated `python3.14` entry had gone too. That is a flush of the
-    # whole registry (`-1` into `.../binfmt_misc/status`), not a delete of one
-    # entry, and nothing in Ubuntu ran one.
+    # by hand.
     #
     # So: own the registration rather than consume one we did not declare. This
     # writes /etc/binfmt.d/nixos.conf and pulls in systemd-binfmt.service, which
     # puts the entry back on every boot of this distro.
+    #
+    # !! TESTED 2026-08-05 AND IT DOES NOT FIX IT. Kept only so the next session
+    # does not retry the same idea. Read systemd's src/binfmt/binfmt.c before
+    # touching this: `apply_rule()` deletes the entry *by name* and re-registers
+    # it, so a rule named WSLInterop does not add to the shared registry, it
+    # **takes Ubuntu's entry over** — and what it substitutes is pinned to this
+    # distro (see the interpreter note below). When the distro goes away, so
+    # does interop for everyone. That is worse than doing nothing. See
+    # docs/status.md, "The fix was wrong, and the test said so".
     #
     # What it writes is *not* WSL's line. nixpkgs routes every interpreter
     # through a tmpfiles symlink, so the entry reads
@@ -67,10 +73,18 @@ in {
 
     # ...and, having taken the unit, disarm its stop action. Upstream's
     # systemd-binfmt.service carries `ExecStop=systemd-binfmt --unregister`,
-    # which is that same whole-registry flush — it does not unregister only what
-    # this distro added, because binfmt_misc offers no way to ask for that. In a
-    # registry shared with every other running distribution, that is somebody
-    # else's state being discarded at our shutdown.
+    # which *is* a whole-registry flush — `-1` into `.../binfmt_misc/status`,
+    # discarding every entry, because binfmt_misc offers no way to unregister
+    # selectively. In a registry shared with every other running distribution,
+    # that is somebody else's state being discarded at our shutdown.
+    #
+    # !! But read systemd's own comment on `disable_binfmt()` before deciding
+    # this is free: the flush is there "to cover for rules using F, since those
+    # might pin a file and thus block us from unmounting stuff cleanly". WSL can
+    # disarm it for Ubuntu safely because WSL's own rule is `P` with no `F` and
+    # pins nothing. The rule above is `PF`. Disarming the flush while
+    # introducing an F rule is the combination systemd is warning about, and it
+    # is untested.
     #
     # WSL knows: it generates precisely this override into
     # /run/systemd/generator/systemd-binfmt.service.d/override.conf on the

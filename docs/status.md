@@ -806,8 +806,9 @@ The remedies are all outside it:
   to `reboot(RB_POWER_OFF)` after a ten-second timeout, which is visible in the
   2026-08-04 journal.
 
-- **Make binfmt_misc unwritable inside the guest.** The most promising remaining
-  idea, and untested. `disable_binfmt()` opens with a guard:
+- **Make binfmt_misc unwritable inside the guest.** The remaining idea, now
+  **declared** in `modules/wsl.nix` as `systemd.services.wsl-binfmt-protect` and
+  awaiting its own import-and-boot. `disable_binfmt()` opens with a guard:
 
   ```c
   r = binfmt_mounted_and_writable();
@@ -819,11 +820,24 @@ The remedies are all outside it:
 
   It checks `access_fd(fd, W_OK)` on `/proc/sys/fs/binfmt_misc`. A guest whose
   copy of that mount is read-only therefore **skips the flush entirely** — the
-  same reason agent sandboxes, which bind it read-only, never trip this. Making
-  it private first (`mount --make-private`) is what would keep the remount from
-  propagating back to Ubuntu, and the guest loses nothing it uses, since it
-  should not be registering anything anyway. What makes it worth trying is that
-  it is declarable by the NixOS flavour and needs nothing from Ubuntu.
+  same reason agent sandboxes, which bind it read-only, never trip this.
+
+  Two details are load-bearing. `--make-private` first, so nothing propagates
+  back to the distribution being protected; and `remount,`**`bind`**`,ro`,
+  because the `bind` is what confines read-only to *this mount* rather than to
+  the superblock — which is shared, so without it the registry would go
+  read-only for Ubuntu too, and Ubuntu is exactly who still needs to write to
+  it.
+
+  It costs the guest nothing it uses: read-only blocks *writing* the registry,
+  not reading or matching it, and WSL's entry names `/init` with `P` and no `F`,
+  so it resolves at exec time in the calling process's own namespace. `.exe`
+  keeps working inside the guest through whatever entry is already registered.
+
+  The two settings it replaces are removed rather than kept alongside, so the
+  experiment has one variable. The closure confirms that:
+  `systemd-binfmt.service` is absent from it and `/etc/binfmt.d/nixos.conf` is
+  empty.
 - **Operationally:** run one distribution at a time, re-register by hand
   afterwards. `docs/troubleshooting.md` carries the command. This is what to do
   today.

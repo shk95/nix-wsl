@@ -1,7 +1,7 @@
 {config, ...}: let
   inherit (config.identity) user;
 in {
-  modules.nixos.wsl = {
+  modules.nixos.wsl = {pkgs, ...}: {
     wsl = {
       enable = true;
       # The account WSL logs into. The same unix account the home-manager
@@ -34,77 +34,69 @@ in {
     #
     # Every WSL distribution also shares one `binfmt_misc` registry. WSL's
     # interop — running `.exe` from Linux — is one entry in it,
-    # `:WSLInterop:M::MZ::/init:P`, registered by whichever distro booted first.
-    # It is global state that no distro owns and any distro can empty.
+    # `:WSLInterop:M::MZ::/init:P`, and it is global state no distro owns.
     #
-    # Upstream defaults `wsl.interop.register` to false, commented "use the
-    # existing registration". That is a bet that somebody else registered
-    # WSLInterop and will keep it registered. On 2026-08-04 the bet lost: this
-    # flavour was imported and booted, and Ubuntu could not exec a `.exe`
-    # afterwards — for a day, across no reboot, until the entry was written back
-    # by hand.
-    #
-    # So: own the registration rather than consume one we did not declare. This
-    # writes /etc/binfmt.d/nixos.conf and pulls in systemd-binfmt.service, which
-    # puts the entry back on every boot of this distro.
-    #
-    # !! TESTED 2026-08-05 AND IT IS IRRELEVANT. Kept only so the next session
-    # does not retry the same idea.
-    #
-    # Measured from Ubuntu at each step: booting this distro leaves Ubuntu's
-    # entry **unharmed**. What breaks interop is this distro's *shutdown*, and
-    # the cause is in systemd itself, not in anything configurable:
+    # **What destroys it is this distro shutting down**, and the cause is inside
+    # systemd rather than anywhere configurable:
     #
     #   src/shutdown/shutdown.c:  (void) disable_binfmt();   /* unconditional */
     #
-    # `systemd-shutdown` — what systemd becomes once every unit is stopped —
-    # writes `-1` to `.../binfmt_misc/status`, flushing the registry that every
-    # WSL distro shares. No unit, no ExecStop, no drop-in, nothing orderable
-    # after it. Proven with a canary entry under a name nothing knows: it
-    # vanished too, and only a flush can do that.
+    # `systemd-shutdown` — what systemd *becomes* once every unit is stopped —
+    # writes `-1` to `.../binfmt_misc/status`, emptying the registry for every
+    # distribution still running. Not a unit. No `ExecStop`, no drop-in, nothing
+    # orderable after it. Proven with a canary entry under a name nothing in the
+    # system knew: it vanished too, and only a flush can do that.
     #
-    # So neither setting here is in the path, and neither was the default they
-    # replaced — which is why 2026-08-04 broke identically without them.
+    # **Two things were tried here first and are not in that path at all** — do
+    # not reintroduce them. `wsl.interop.register = true`, so this distro
+    # registers its own entry; and `ExecStop = [""]` on systemd-binfmt.service,
+    # so its shutdown does not flush. Both build, both were imported and booted
+    # on 2026-08-05, and neither changed anything: the first is overwritten
+    # within the same service start by WSL's own generated drop-in, and the
+    # second disarms `binfmt.c`'s flush while the one that fires is
+    # `shutdown.c`'s. See docs/status.md, "The root cause, found by a canary".
     #
-    # See docs/status.md, "The root cause, found by a canary".
+    # What is left is the guard `disable_binfmt()` opens with:
     #
-    # What it writes is *not* WSL's line. nixpkgs routes every interpreter
-    # through a tmpfiles symlink, so the entry reads
+    #   r = binfmt_mounted_and_writable();
+    #   if (r == 0) { log_debug("... not mounted in read-write mode, not detaching entries."); return 0; }
     #
-    #   :WSLInterop:M::MZ::/run/binfmt/WSLInterop:PF   (+ L+ /run/binfmt/WSLInterop → /init)
+    # It ends in `access_fd(fd, W_OK)`, so a distribution whose *own* view of
+    # `/proc/sys/fs/binfmt_misc` is read-only skips the flush entirely. That is
+    # incidentally why agent sandboxes, which bind that path read-only, have
+    # never once tripped this.
     #
-    # and `/run/binfmt/WSLInterop` exists only in *this* distro's mount
-    # namespace. That looks like a bug for a registry every distro reads, and it
-    # is why the `F` in `PF` is load-bearing rather than tidy: `fixBinary` makes
-    # the kernel open the interpreter once, at registration, and exec the pinned
-    # inode with no path lookup afterwards. Without it a process in another
-    # distro would resolve that path in its own namespace, find nothing, and be
-    # no better off than before. Do not "simplify" this to interpreter = "/init".
-    wsl.interop.register = true;
+    # This costs the guest nothing it uses. Read-only blocks *writing* the
+    # registry, not reading or matching it, and the entry WSL registers names
+    # `/init` with `P` and no `F` — resolved at exec time in the calling
+    # process's own namespace. So `.exe` keeps working in here through whichever
+    # entry is already registered; only our ability to damage it goes away.
+    #
+    # UNVERIFIED at the time of writing. It is the third attempt at this and the
+    # first whose reasoning comes from an explicit guard in the source rather
+    # than from inference about behaviour.
+    systemd.services.wsl-binfmt-protect = {
+      description = "Make binfmt_misc read-only here so shutdown cannot flush it for other distros";
+      wantedBy = ["multi-user.target"];
+      path = [pkgs.util-linux];
 
-    # ...and, having taken the unit, disarm its stop action. Upstream's
-    # systemd-binfmt.service carries `ExecStop=systemd-binfmt --unregister`,
-    # which *is* a whole-registry flush — `-1` into `.../binfmt_misc/status`,
-    # discarding every entry, because binfmt_misc offers no way to unregister
-    # selectively. In a registry shared with every other running distribution,
-    # that is somebody else's state being discarded at our shutdown.
-    #
-    # !! But read systemd's own comment on `disable_binfmt()` before deciding
-    # this is free: the flush is there "to cover for rules using F, since those
-    # might pin a file and thus block us from unmounting stuff cleanly". WSL can
-    # disarm it for Ubuntu safely because WSL's own rule is `P` with no `F` and
-    # pins nothing. The rule above is `PF`. Disarming the flush while
-    # introducing an F rule is the combination systemd is warning about, and it
-    # is untested.
-    #
-    # WSL knows: it generates precisely this override into
-    # /run/systemd/generator/systemd-binfmt.service.d/override.conf on the
-    # Ubuntu side, headed "to prevent binfmt.d from overriding WSL's binfmt
-    # interpreter", and offers `[boot] protectBinfmt` in wsl.conf to turn it
-    # off. Declaring it here rather than relying on that generator having fired
-    # inside this distro, which is not something the flush evidence lets us
-    # assume.
-    systemd.services.systemd-binfmt.serviceConfig.ExecStop = [""];
+      # `--make-private` first, so neither the flag change nor anything later
+      # propagates back to the distro we are trying to protect. Then
+      # `remount,bind,ro`: the `bind` is what confines read-only to *this mount*
+      # instead of the superblock, which is shared with every other
+      # distribution — without it this would make the registry read-only for
+      # Ubuntu too, and Ubuntu is precisely who still needs to write to it.
+      script = ''
+        mountpoint -q /proc/sys/fs/binfmt_misc || exit 0
+        mount --make-private /proc/sys/fs/binfmt_misc
+        mount -o remount,bind,ro /proc/sys/fs/binfmt_misc
+      '';
+
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+      };
+    };
 
     # Deliberately almost empty. The experiment is whether a system layer earns
     # its place, and starting it with packages and services already moved in

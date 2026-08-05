@@ -806,9 +806,9 @@ The remedies are all outside it:
   to `reboot(RB_POWER_OFF)` after a ten-second timeout, which is visible in the
   2026-08-04 journal.
 
-- **Make binfmt_misc unwritable inside the guest.** The remaining idea, now
-  **declared** in `modules/wsl.nix` as `systemd.services.wsl-binfmt-protect` and
-  awaiting its own import-and-boot. `disable_binfmt()` opens with a guard:
+- **Make binfmt_misc unwritable inside the guest. This is the one that works**,
+  declared in `modules/wsl.nix` as `systemd.services.wsl-binfmt-protect` and
+  verified on 2026-08-05 — see below. `disable_binfmt()` opens with a guard:
 
   ```c
   r = binfmt_mounted_and_writable();
@@ -838,6 +838,46 @@ The remedies are all outside it:
   experiment has one variable. The closure confirms that:
   `systemd-binfmt.service` is absent from it and `/etc/binfmt.d/nixos.conf` is
   empty.
+
+### It works, and this is what closes the experiment
+
+Verified 2026-08-05 by a person on a freshly imported distribution — the import
+matters, since neither this nor the UID takes effect on an existing one.
+
+| checked from Ubuntu | result |
+| --- | --- |
+| `WSLInterop` after two full boot→shutdown cycles | present, `interpreter /init`, `flags: P` |
+| `CanaryZZ`, registered by hand before the cycles | **present** — the flush never ran |
+| `cmd.exe /c echo ok` | runs |
+| `grep binfmt_misc /proc/mounts` in Ubuntu | `rw` — the `bind` scoping held |
+| after `wsl --unregister NixOS` | still fine |
+
+Inside the guest, `/proc/mounts` reports the same filesystem `ro`, and
+`wsl-binfmt-protect` is active.
+
+The canary is what makes this conclusive rather than encouraging. A surviving
+`WSLInterop` could always be explained by something re-registering it; a
+surviving `CanaryZZ` cannot, because nothing in either system knows that name.
+Its presence means no flush occurred at all.
+
+And the journal shows the flush was *attempted*, not merely absent — every one
+of those shutdowns reached
+
+```
+systemd-shutdown[1]: Sending SIGTERM to remaining processes...
+```
+
+which is the statement immediately after `disable_binfmt()` in `shutdown.c`. So
+`systemd-shutdown` ran, called it, and the writability guard declined. That is
+the entire claim, observed end to end.
+
+**What this experiment leaves behind.** Not the unit — that is nine lines and
+disposable. The method: three attempts, and the two that failed were both
+reasoned from *observed behaviour* ("the entry disappears at teardown, so
+teardown must delete it"), while the one that worked was reasoned from *reading
+the source of the thing doing the damage*. Two rebuilds and two broken
+afternoons separate those. When a mechanism is not visibly attributable, read
+the code that would have to be responsible before designing around a guess.
 - **Operationally:** run one distribution at a time, re-register by hand
   afterwards. `docs/troubleshooting.md` carries the command. This is what to do
   today.

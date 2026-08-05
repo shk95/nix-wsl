@@ -72,9 +72,18 @@ in {
     # process's own namespace. So `.exe` keeps working in here through whichever
     # entry is already registered; only our ability to damage it goes away.
     #
-    # UNVERIFIED at the time of writing. It is the third attempt at this and the
-    # first whose reasoning comes from an explicit guard in the source rather
-    # than from inference about behaviour.
+    # **Verified 2026-08-05** by a person, on a freshly imported distro: two
+    # boot→shutdown cycles with a canary entry registered in Ubuntu, and a
+    # `wsl --unregister` afterwards. Both entries survived all of it, Ubuntu's
+    # `/proc/mounts` still said `rw`, and `.exe` kept working throughout. Each
+    # of those shutdowns reached `systemd-shutdown[1]: Sending SIGTERM to
+    # remaining processes...` — the log line immediately after the
+    # `disable_binfmt()` call above — so the flush was attempted and declined,
+    # which is the whole claim.
+    #
+    # It was the third attempt, and the first whose reasoning came from an
+    # explicit guard in the source rather than from inference about behaviour.
+    # That is the transferable part.
     systemd.services.wsl-binfmt-protect = {
       description = "Make binfmt_misc read-only here so shutdown cannot flush it for other distros";
       wantedBy = ["multi-user.target"];

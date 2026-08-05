@@ -74,6 +74,21 @@ is always the same: run the command again outside the sandbox and compare. See
   the login on this host; `gitName = "shk"` is who commits are authored by.
   They are separate declared options in `modules/flake/identity.nix` on purpose.
   Fusing them makes every commit look like it came from a machine account.
+- **WSL distributions share one kernel, so some state is global and unowned.**
+  Not a curiosity — it has now cost two afternoons, in two different places. The
+  cgroup hierarchy is shared, so two distributions whose default user has the
+  same UID collide and the second one's `systemd --user` never starts. The
+  `binfmt_misc` registry is shared, so *any* systemd distribution's shutdown
+  flushes it for every distribution still running and Windows interop dies in a
+  distribution nobody touched.
+
+  Both failures share a shape worth recognising early: **the damage lands
+  somewhere other than where the change was made**, and nothing in the harmed
+  distribution's configuration or logs points back at the cause. Anything the
+  NixOS flavour declares that reaches a kernel-global resource has to be checked
+  against "what happens to the *other* distribution when this one shuts down".
+  Both are recorded in `docs/troubleshooting.md` under their literal messages;
+  read those before designing around either.
 - **`flake.lock` is the pin.** Reproducibility is the entire point here, so it
   is committed and never ignored. `nix flake update` is a deliberate act, not
   housekeeping — it is not on the pre-approved command list.

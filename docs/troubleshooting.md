@@ -266,10 +266,29 @@ echo ':CanaryZZ:M::MZ::/init:P' | sudo tee /proc/sys/fs/binfmt_misc/register
 
 If `CanaryZZ` is gone, it was a flush — nothing deletes that name by name.
 
-**So, operationally: run one distribution at a time, and re-register by hand
-afterwards** with the command above. If you want it automated it has to live in
-Ubuntu's system layer, which this repository's standalone flavour cannot
-express — see `docs/status.md`.
+**Fixed for this repository's NixOS flavour, on 2026-08-05.** The guest cannot
+stop `systemd-shutdown` calling the flush, but it can make the call decline.
+`disable_binfmt()` opens with `binfmt_mounted_and_writable()`, which ends in
+`access_fd(fd, W_OK)` — so a distribution whose *own* view of the registry is
+read-only skips it. `modules/wsl.nix` declares that as
+`systemd.services.wsl-binfmt-protect`:
+
+```sh
+mount --make-private /proc/sys/fs/binfmt_misc     # do not propagate back to the other distro
+mount -o remount,bind,ro /proc/sys/fs/binfmt_misc # bind: this mount only, not the shared superblock
+```
+
+The `bind` is not decoration. Without it the read-only lands on the superblock,
+which every distribution shares, and Ubuntu — the one that still needs to
+write — loses the registry instead. Check with `grep binfmt_misc /proc/mounts`
+on both sides: the guest should say `ro`, Ubuntu `rw`.
+
+The guest loses nothing: read-only blocks writing the registry, not reading or
+matching it, and WSL's entry names `/init` with `P` and no `F`, resolved at exec
+time in the caller's own namespace. `.exe` keeps working in both.
+
+**If you are on a distribution this repository does not manage**, the fallback
+is unchanged: run one at a time, and re-register by hand with the command above.
 
 **How to attribute it, if it happens again.** The registry keeps no history, so
 the journal is all there is. Interop's last known-good moment and the first

@@ -210,22 +210,45 @@ echo ':WSLInterop:M::MZ::/init:P' | sudo tee /proc/sys/fs/binfmt_misc/register
 `wsl --shutdown` from Windows also fixes it — WSL re-registers at boot — but you
 cannot run that from inside, because `wsl.exe` is itself an `.exe`.
 
-**Stopping it recurring — not solved.** The obvious move is to have the second
-distribution register `WSLInterop` itself (`wsl.interop.register`) and stop it
-flushing on shutdown (`ExecStop=`). `modules/wsl.nix` does both. **It was tested
-on 2026-08-05 and interop still broke.** Do not spend the afternoon retrying it.
+**It is the second distribution's *shutdown* that does it, and no amount of
+NixOS configuration prevents it.** Measured on 2026-08-05 by watching the
+registry from Ubuntu at each step:
 
-Why it cannot work as stated: registering a rule of that name *takes the entry
-over* rather than adding one, per the table above. What nixpkgs substitutes is
-`:WSLInterop:M::MZ::/run/binfmt/WSLInterop:PF` — the interpreter is a tmpfiles
-symlink inside *that* distribution's `/run`, usable from elsewhere only because
-`F` pins the inode at registration time. So Ubuntu's own `/init:P` entry is
-destroyed and replaced by one whose lifetime is tied to a distribution that is
-about to be terminated or unregistered. That is strictly worse than leaving the
-registry alone.
+| step | registry seen from Ubuntu |
+| --- | --- |
+| baseline | `WSLInterop`, `interpreter /init` |
+| `wsl -d NixOS` — booted, left running | `WSLInterop`, `interpreter /init` — **unharmed** |
+| exit the NixOS shell (distro shuts down) | **gone** |
 
-Until this is settled, treat it operationally: **run one distribution at a
-time**, and re-register by hand afterwards with the command above.
+Booting the second distribution is harmless. Note that it is harmless even
+though `systemd-binfmt` ran inside it and its `binfmt.d` rule names
+`WSLInterop`: WSL's generated drop-in re-registers `:WSLInterop:M::MZ::/init:P`
+as a second `ExecStart`, which lands after the NixOS rule and puts the original
+line back. The interpreter reads `/init`, not `/run/binfmt/WSLInterop`, which is
+how you can tell.
+
+The shutdown is what removes it, and the journal rules out every mechanism you
+could configure:
+
+```
+systemd-binfmt.service: Deactivated successfully.   ← no ExecStop process ran
+Stopped Set Up Additional Binary Formats.
+```
+
+- not a flush — `.../binfmt_misc/status` still carries its mount-time timestamp
+- not an unmount — `proc-sys-fs-binfmt_misc.mount` is never stopped
+- not `systemd-binfmt --unregister` — `ExecStop` was cleared and no process ran
+
+What is left is a delete *by name*, performed during teardown by WSL itself,
+outside the distribution's systemd. WSL registers `WSLInterop` when a
+distribution starts and removes it when one stops, without reference-counting
+the distributions that still need it. Nothing declarable inside NixOS-WSL sits
+in that path.
+
+**So, operationally: run one distribution at a time, and re-register by hand
+afterwards** with the command above. If you want it automated it has to live in
+Ubuntu's system layer, which this repository's standalone flavour cannot
+express — see `docs/status.md`.
 
 **How to attribute it, if it happens again.** The registry keeps no history, so
 the journal is all there is. Interop's last known-good moment and the first

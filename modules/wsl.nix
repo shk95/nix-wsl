@@ -48,14 +48,20 @@ in {
     # writes /etc/binfmt.d/nixos.conf and pulls in systemd-binfmt.service, which
     # puts the entry back on every boot of this distro.
     #
-    # !! TESTED 2026-08-05 AND IT DOES NOT FIX IT. Kept only so the next session
-    # does not retry the same idea. Read systemd's src/binfmt/binfmt.c before
-    # touching this: `apply_rule()` deletes the entry *by name* and re-registers
-    # it, so a rule named WSLInterop does not add to the shared registry, it
-    # **takes Ubuntu's entry over** — and what it substitutes is pinned to this
-    # distro (see the interpreter note below). When the distro goes away, so
-    # does interop for everyone. That is worse than doing nothing. See
-    # docs/status.md, "The fix was wrong, and the test said so".
+    # !! TESTED 2026-08-05 AND IT IS IRRELEVANT. Kept only so the next session
+    # does not retry the same idea.
+    #
+    # Measured from Ubuntu at each step: booting this distro leaves Ubuntu's
+    # entry **unharmed** — WSL's generated drop-in re-registers its own
+    # `/init:P` line as a second ExecStart, after the rule below, so the rule
+    # below never survives to matter. What breaks interop is this distro's
+    # *shutdown*, and the journal rules out every mechanism that could be
+    # configured: no flush (status never written), no unmount, no ExecStop
+    # process. The deletion is by name, done by WSL outside this distro's
+    # systemd. Nothing declarable here sits in that path — which is also why
+    # 2026-08-04 broke identically with `register` at its default false.
+    #
+    # See docs/status.md, "The measurement that settled it".
     #
     # What it writes is *not* WSL's line. nixpkgs routes every interpreter
     # through a tmpfiles symlink, so the entry reads

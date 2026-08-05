@@ -763,12 +763,27 @@ The remedies are all outside it:
   home-manager user service cannot do it. It would be unmanaged configuration in
   `/etc/systemd/system`, which is exactly the kind of thing this repository
   exists to avoid.
-- **A decoy entry under a different name.** Untested idea, recorded because it
-  is cheap to try: WSL deletes the entry called `WSLInterop`, by name. A second
-  registration — same magic `MZ`, same `/init:P`, a different name — is not in
-  that path and should survive the teardown, keeping interop alive for whoever
-  is left. It can be declared by the NixOS flavour, so it stays inside this
-  repository. It needs one experiment before it is worth believing.
+- **A spare entry under a different name.** Untested idea, recorded because it
+  is cheap to try. Not a decoy and not a sacrifice — the point is that it is
+  *not* deleted. WSL's teardown names its target (`echo -1 >
+  .../binfmt_misc/WSLInterop`), so an entry called anything else is not in that
+  command's path at all. A second registration with the same magic `MZ`, the
+  same `/init`, the same `P` is a fully functional handler: the kernel walks the
+  enabled entries on `execve` and uses the first whose magic matches, and the
+  two are interchangeable. So after teardown removes `WSLInterop`, the spare is
+  still there and `.exe` still runs. It is redundancy, not bait.
+
+  It costs little — no `F`, so it pins no inode and blocks no unmount; `/init`
+  resolves per namespace at exec time, so one entry is correct for every
+  distribution; and `wsl --shutdown` clears the registry, so nothing
+  accumulates. It can be declared by the NixOS flavour, which means the spare
+  exists exactly when a distribution that could destroy `WSLInterop` has run —
+  self-consistent.
+
+  **What would sink it**, and the reason to test rather than assume: on
+  2026-08-04 Ubuntu's unrelated `python3.14` entry disappeared too, and that is
+  still unexplained. If WSL's teardown is broader than one name, the spare dies
+  with it.
 - **Operationally:** run one distribution at a time, re-register by hand
   afterwards. `docs/troubleshooting.md` carries the command. This is what to do
   today.

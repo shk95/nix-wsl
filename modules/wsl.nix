@@ -52,16 +52,21 @@ in {
     # does not retry the same idea.
     #
     # Measured from Ubuntu at each step: booting this distro leaves Ubuntu's
-    # entry **unharmed** — WSL's generated drop-in re-registers its own
-    # `/init:P` line as a second ExecStart, after the rule below, so the rule
-    # below never survives to matter. What breaks interop is this distro's
-    # *shutdown*, and the journal rules out every mechanism that could be
-    # configured: no flush (status never written), no unmount, no ExecStop
-    # process. The deletion is by name, done by WSL outside this distro's
-    # systemd. Nothing declarable here sits in that path — which is also why
-    # 2026-08-04 broke identically with `register` at its default false.
+    # entry **unharmed**. What breaks interop is this distro's *shutdown*, and
+    # the cause is in systemd itself, not in anything configurable:
     #
-    # See docs/status.md, "The measurement that settled it".
+    #   src/shutdown/shutdown.c:  (void) disable_binfmt();   /* unconditional */
+    #
+    # `systemd-shutdown` — what systemd becomes once every unit is stopped —
+    # writes `-1` to `.../binfmt_misc/status`, flushing the registry that every
+    # WSL distro shares. No unit, no ExecStop, no drop-in, nothing orderable
+    # after it. Proven with a canary entry under a name nothing knows: it
+    # vanished too, and only a flush can do that.
+    #
+    # So neither setting here is in the path, and neither was the default they
+    # replaced — which is why 2026-08-04 broke identically without them.
+    #
+    # See docs/status.md, "The root cause, found by a canary".
     #
     # What it writes is *not* WSL's line. nixpkgs routes every interpreter
     # through a tmpfiles symlink, so the entry reads

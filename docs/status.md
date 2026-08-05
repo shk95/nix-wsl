@@ -727,17 +727,48 @@ systemd-binfmt.service: Deactivated successfully.   ← ExecStop= held; no proce
 Stopped Set Up Additional Binary Formats.
 ```
 
-and, ruling out the alternatives:
+### The root cause, found by a canary
 
-- **not a flush** — `.../binfmt_misc/status` still carries its 2026-08-04
-  mount-time timestamp, so `disable_binfmt()` has never run on this host
-- **not an unmount** — `proc-sys-fs-binfmt_misc.mount` is never stopped
-- **not `--unregister`** — `ExecStop` was cleared and no process was spawned
+The reading above — "a delete by name, done by WSL" — was wrong too, and one
+more experiment killed it. Register a second entry under a name nothing in the
+system knows, run the cycle, and see whether it survives:
 
-What remains is a delete *by name*, done during teardown by WSL itself, outside
-the distribution's systemd. WSL appears to register `WSLInterop` when a
-distribution starts and remove it when one stops, without reference-counting the
-other distributions still relying on it.
+```
+:WSLInterop:M::MZ::/init:P          both registered by hand, 16:28
+:WSLInteropKeep:M::MZ::/init:P
+                                    wsl -d NixOS, then exit
+WSLInteropKeep                      GONE
+```
+
+Nothing deletes `WSLInteropKeep` by name, because nothing knows the name — it
+was invented minutes earlier. **Only a whole-registry flush can remove it.** So
+there is a flush, and every "not a flush" line above is retracted.
+
+They were all founded on one bad assumption: that `.../binfmt_misc/status` would
+show a recent mtime if it had been written. **binfmt_misc does not update mtime
+on writes to `status`** — it still reads 2026-08-04 on a host where flushes have
+now been demonstrated. `register`'s mtime *does* move, which is what made the
+asymmetry so convincing and so wrong. A canary entry is the reliable test; mtime
+is not.
+
+**Where the flush comes from.** `disable_binfmt()` has exactly two callers in
+systemd:
+
+```c
+src/binfmt/binfmt.c:206:        return disable_binfmt();     /* --unregister, i.e. ExecStop */
+src/shutdown/shutdown.c:466:    (void) disable_binfmt();     /* unconditional */
+```
+
+The second is `systemd-shutdown` — what systemd *becomes* at the end of
+shutdown, after all units are stopped. It is not a unit. There is no `ExecStop`,
+no drop-in, no option, and nothing orderable after it; the next statement in the
+source is the `Sending SIGTERM to remaining processes...` line visible in every
+one of these shutdowns.
+
+So: **every systemd distribution's shutdown empties the shared registry for
+every distribution still running.** That is the whole bug, it explains
+`python3.14`, and it explains why 2026-08-04 broke with no relevant setting
+present at all.
 
 **Consequence for this repository: both settings in the PR are irrelevant to the
 actual mechanism**, and the same is true of the `wsl.interop.register = false`
@@ -763,27 +794,36 @@ The remedies are all outside it:
   home-manager user service cannot do it. It would be unmanaged configuration in
   `/etc/systemd/system`, which is exactly the kind of thing this repository
   exists to avoid.
-- **A spare entry under a different name.** Untested idea, recorded because it
-  is cheap to try. Not a decoy and not a sacrifice — the point is that it is
-  *not* deleted. WSL's teardown names its target (`echo -1 >
-  .../binfmt_misc/WSLInterop`), so an entry called anything else is not in that
-  command's path at all. A second registration with the same magic `MZ`, the
-  same `/init`, the same `P` is a fully functional handler: the kernel walks the
-  enabled entries on `execve` and uses the first whose magic matches, and the
-  two are interchangeable. So after teardown removes `WSLInterop`, the spare is
-  still there and `.exe` still runs. It is redundancy, not bait.
+- ~~**A spare entry under a different name.**~~ **Tested 2026-08-05, dead.** The
+  idea was redundancy rather than bait: a second working handler under a name
+  the teardown does not target. It was the canary that disproved itself — a
+  flush does not care about names. Recorded because the experiment is what found
+  the root cause, which is worth more than the idea was.
 
-  It costs little — no `F`, so it pins no inode and blocks no unmount; `/init`
-  resolves per namespace at exec time, so one entry is correct for every
-  distribution; and `wsl --shutdown` clears the registry, so nothing
-  accumulates. It can be declared by the NixOS flavour, which means the spare
-  exists exactly when a distribution that could destroy `WSLInterop` has run —
-  self-consistent.
+- **Do not shut the guest down cleanly.** The flush is in `systemd-shutdown`, so
+  a distribution that never reaches it never flushes. Untested and probably not
+  reachable: WSL asks for a clean `systemctl poweroff` first and only falls back
+  to `reboot(RB_POWER_OFF)` after a ten-second timeout, which is visible in the
+  2026-08-04 journal.
 
-  **What would sink it**, and the reason to test rather than assume: on
-  2026-08-04 Ubuntu's unrelated `python3.14` entry disappeared too, and that is
-  still unexplained. If WSL's teardown is broader than one name, the spare dies
-  with it.
+- **Make binfmt_misc unwritable inside the guest.** The most promising remaining
+  idea, and untested. `disable_binfmt()` opens with a guard:
+
+  ```c
+  r = binfmt_mounted_and_writable();
+  if (r == 0) {
+          log_debug("binfmt_misc is not mounted in read-write mode, not detaching entries.");
+          return 0;
+  }
+  ```
+
+  It checks `access_fd(fd, W_OK)` on `/proc/sys/fs/binfmt_misc`. A guest whose
+  copy of that mount is read-only therefore **skips the flush entirely** — the
+  same reason agent sandboxes, which bind it read-only, never trip this. Making
+  it private first (`mount --make-private`) is what would keep the remount from
+  propagating back to Ubuntu, and the guest loses nothing it uses, since it
+  should not be registering anything anyway. What makes it worth trying is that
+  it is declarable by the NixOS flavour and needs nothing from Ubuntu.
 - **Operationally:** run one distribution at a time, re-register by hand
   afterwards. `docs/troubleshooting.md` carries the command. This is what to do
   today.

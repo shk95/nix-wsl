@@ -227,23 +227,44 @@ as a second `ExecStart`, which lands after the NixOS rule and puts the original
 line back. The interpreter reads `/init`, not `/run/binfmt/WSLInterop`, which is
 how you can tell.
 
-The shutdown is what removes it, and the journal rules out every mechanism you
-could configure:
+**The shutdown flushes the whole registry, and it is PID 1 that does it.** Not
+`systemd-binfmt.service` — `systemd-shutdown`, the binary systemd becomes at the
+end of shutdown:
+
+```c
+/* systemd/src/shutdown/shutdown.c */
+        disable_coredumps();
+        (void) disable_binfmt();                        /* -1 into .../binfmt_misc/status */
+
+        log_info("Sending SIGTERM to remaining processes...");
+```
+
+`disable_binfmt()` has exactly two callers in the whole tree — `binfmt.c` under
+`--unregister`, and this one. This one is unconditional. There is no unit, no
+`ExecStop`, no drop-in and no configuration option anywhere in its path, and the
+journal line right after it is the one you can see in every WSL distro shutdown:
 
 ```
-systemd-binfmt.service: Deactivated successfully.   ← no ExecStop process ran
-Stopped Set Up Additional Binary Formats.
+systemd-shutdown[1]: Sending SIGTERM to remaining processes...
 ```
 
-- not a flush — `.../binfmt_misc/status` still carries its mount-time timestamp
-- not an unmount — `proc-sys-fs-binfmt_misc.mount` is never stopped
-- not `systemd-binfmt --unregister` — `ExecStop` was cleared and no process ran
+So **any** systemd distribution shutting down empties the registry for every
+distribution still running. This is why unrelated entries vanish together, and
+it is the answer to `python3.14`.
 
-What is left is a delete *by name*, performed during teardown by WSL itself,
-outside the distribution's systemd. WSL registers `WSLInterop` when a
-distribution starts and removes it when one stops, without reference-counting
-the distributions that still need it. Nothing declarable inside NixOS-WSL sits
-in that path.
+**Do not try to prove a flush from `status`'s mtime.** binfmt_misc does not
+update it on write — it still reads as the mount time on a host where flushes
+have demonstrably happened. `register`'s mtime *does* move. An afternoon was
+lost to that asymmetry.
+
+The reliable test is a canary: register a second entry under a name nothing else
+knows, then look for it.
+
+```sh
+echo ':CanaryZZ:M::MZ::/init:P' | sudo tee /proc/sys/fs/binfmt_misc/register
+```
+
+If `CanaryZZ` is gone, it was a flush — nothing deletes that name by name.
 
 **So, operationally: run one distribution at a time, and re-register by hand
 afterwards** with the command above. If you want it automated it has to live in

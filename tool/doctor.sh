@@ -69,17 +69,32 @@ if [ "$hooks" = ".githooks" ]; then
 else
   # A hard failure, not a warning — see decisions/002 upstream. Without this a
   # clone commits with no formatting check, no lint and no secret scan.
-  bad "git hooks are NOT enabled" "Run: git config core.hooksPath .githooks"
+  bad "git hooks are NOT enabled" "Inspect with 'tool/setup', then enable with 'tool/setup --fix'."
+fi
+
+git_name=$(git config --get user.name 2>/dev/null || true)
+git_email=$(git config --get user.email 2>/dev/null || true)
+if [ -n "$git_name" ] && [ -n "$git_email" ]; then
+  ok "git identity configured ($git_name <$git_email>)"
+else
+  bad "git identity is incomplete" "Set user.name and user.email at the appropriate local or user scope before committing."
 fi
 
 command -v gitleaks >/dev/null 2>&1 && ok "gitleaks" \
   || warn "gitleaks not installed — commits will not be scanned for secrets" "CI scans too, but only after you have pushed."
 
-command -v gh >/dev/null 2>&1 && ok "gh" \
-  || warn "gh not installed — cannot read or file blocked issues" "Install: https://cli.github.com"
+if command -v gh >/dev/null 2>&1; then
+  if gh auth status --hostname github.com >/dev/null 2>&1; then
+    ok "gh authenticated for github.com"
+  else
+    warn "gh installed but not authenticated for github.com" "Run 'gh auth login' before reading issues or publishing work."
+  fi
+else
+  warn "gh not installed — cannot read or file blocked issues" "Install: https://cli.github.com"
+fi
 
 echo
-echo "Flavours declared in flake.nix"
+echo "Flavours declared by the flake"
 # tool/checks/test builds every configuration on the host it runs on, so what
 # matters here is only whether each one can also be *activated* from this
 # machine. Building and activating are different questions: a NixOS closure
@@ -87,12 +102,12 @@ echo "Flavours declared in flake.nix"
 
 found=0
 
-if grep -q 'homeConfigurations' flake.nix 2>/dev/null; then
+if grep -Rqs --include='*.nix' 'homeConfigurations' flake.nix modules 2>/dev/null; then
   found=1
   ok "homeConfigurations — build and switch here"
 fi
 
-if grep -q 'nixosConfigurations' flake.nix 2>/dev/null; then
+if grep -Rqs --include='*.nix' 'nixosConfigurations' flake.nix modules 2>/dev/null; then
   found=1
   if [ -r /etc/os-release ] && grep -q '^ID=nixos' /etc/os-release; then
     ok "nixosConfigurations — build and switch here"
@@ -102,7 +117,7 @@ if grep -q 'nixosConfigurations' flake.nix 2>/dev/null; then
   fi
 fi
 
-[ "$found" -eq 1 ] || warn "no homeConfigurations or nixosConfigurations in flake.nix" \
+[ "$found" -eq 1 ] || warn "no homeConfigurations or nixosConfigurations in the flake sources" \
      "tool/checks/test has nothing to verify."
 
 echo

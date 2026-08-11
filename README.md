@@ -24,14 +24,16 @@ itself does.
 
 ## Setup
 
-**1. Enable the git hooks.** First, before anything else. `core.hooksPath` is
-local repository configuration: it is not cloned and nothing reminds you, so a
-clone that skips this line commits with no formatting check, no lint and no
-secret scan.
+**1. Enable the git hooks.** First, before anything else. The hook scripts are
+tracked, but `core.hooksPath` is local repository configuration and is not
+cloned. Inspect the local change, then apply it explicitly:
 
 ```sh
-git config core.hooksPath .githooks
+tool/setup
+tool/setup --fix
 ```
+
+The hooks provide fast local feedback; CI remains the clean-clone backstop.
 
 **2. Install Nix.** [Determinate](https://docs.determinate.systems/) is the
 easier route on Ubuntu/WSL because it sets up the daemon and sensible defaults;
@@ -70,7 +72,7 @@ If you would rather not activate anything yet, `nix develop` gives you a shell
 with `just` and the Nix tooling in it, without touching `$HOME`.
 
 Note that activation is a deliberate act here, not part of routine work — see
-the rules in [`CLAUDE.md`](CLAUDE.md).
+the verification boundary in [`CONTRIBUTING.md`](CONTRIBUTING.md#verify-work).
 
 ## Everyday commands
 
@@ -106,6 +108,8 @@ itself.
 | `flake.nix` | Inputs, and one line handing `modules/` to flake-parts |
 | `modules/*.nix` | One file per feature, collected automatically |
 | `modules/flake/` | Identity, nixpkgs config, the two configurations, the devShell |
+| `AGENTS.md` | Model-independent judgement and safety boundaries for agents |
+| `CONTRIBUTING.md` | Shared workflow for people and tools |
 | `tool/` | The environment doctor, the checks, the worktree helper |
 | `docs/` | What "done" means, current state, and findings worth grepping |
 | `Justfile` | Day-to-day commands |
@@ -120,3 +124,6 @@ upstream there too.
 
 `master` is the released state; `dev` is the default branch and where work
 starts. `master` will sit visibly behind `dev`; that is intended.
+
+The complete contribution workflow, including the local-state boundary and
+definition of done, is in [`CONTRIBUTING.md`](CONTRIBUTING.md).

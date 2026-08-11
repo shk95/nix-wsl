@@ -620,6 +620,327 @@ and keeps running throughout, and rollback is `wsl --unregister <name>`. The
 machine-side risk is genuinely low; the repository-side cost above is the real
 constraint, and they should not be confused for each other.
 
+### That last paragraph was wrong, and finding out cost a day
+
+**"Untouched and keeps running throughout" is false.** Booting the imported
+distribution on 2026-08-04 broke Windows interop *in Ubuntu* — every `.exe`
+failed with `exec format error` — and it stayed broken for a day, across no
+reboot, until the registration was written back by hand on 2026-08-05. Nothing
+in Ubuntu had changed.
+
+**Why it was mis-attributed.** The two things that had changed on the Ubuntu
+side that week were the home-manager activation and the bash→zsh login shell
+switch, so both were suspected first. Neither can touch `binfmt_misc`; it is a
+kernel-global registry that a user-level generation has no access to. The
+timeline is what settles it — interop was healthy at 13:28, the NixOS
+distribution booted at 13:49, and the first `exec format error` is at 14:30,
+with nothing else in the journal in between.
+
+**A third shared-kernel resource, after cgroups.** WSL2 gives every distribution
+its own mount and PID namespaces but one kernel, and `binfmt_misc` is global to
+it. The registry is not merely shared, it is *unowned* — and worse, the natural
+way to "add" to it is destructive. `systemd-binfmt`'s `apply_rule()` deletes the
+entry named by each `binfmt.d` rule and registers its own in its place, so a
+rule named `WSLInterop` in any distribution **takes the shared entry over**.
+Only `--unregister` (`ExecStop`) flushes wholesale, via `-1` into
+`.../binfmt_misc/status`.
+
+Ubuntu is protected — WSL generates a drop-in clearing that `ExecStop` and
+re-registering afterwards, and offers `[boot] protectBinfmt` to disable it. But
+a drop-in in one distribution only guards that distribution's copy of the unit.
+Nothing guards the registry.
+
+**What is declared now.** `modules/wsl.nix` sets `wsl.interop.register = true`
+and clears `ExecStop` on `systemd-binfmt.service`, so this flavour registers its
+own entry on boot and never flushes anyone's. NixOS-WSL defaults that option to
+false, commented "use the existing registration" — a bet that another
+distribution registered `WSLInterop` and will keep it registered, which is
+precisely the bet that loses when two distributions run. The design consequence
+is the same shape as the UID one: **a fragment can be correct in isolation and
+still be wrong because another distribution is running**, and neither failure
+is visible from inside the distribution that causes it.
+
+### The fix was wrong, and the test said so
+
+Tested the same day, 2026-08-05, and **it does not work**. Recorded in full
+because a failed experiment is a perfectly good outcome and the next session
+must not retry it.
+
+**The test was real.** The tarball a person built at 15:28 resolves to the same
+store path as `nix build .#nixosConfigurations.wsl.config.system.build.tarballBuilder`
+on the fix branch, and embeds toplevel `cwkb59h…` — the one carrying both
+settings. So this is a negative result, not a stale build.
+
+**What the journal shows.** The NixOS distribution's own systemd logs into
+Ubuntu's journal, which is a piece of luck worth remembering:
+
+```
+proc-sys-fs-binfmt_misc.automount: Path /proc/sys/fs/binfmt_misc is already a mount point, refusing start.
+Starting Set Up Additional Binary Formats...      ← systemd-binfmt ran
+Finished Set Up Additional Binary Formats.        ← 16 ms, no warnings
+...
+systemd-binfmt.service: Deactivated successfully. ← stopped cleanly; ExecStop= worked
+```
+
+So both halves did exactly what they were written to do. Interop broke anyway.
+
+**Why the design is wrong, not merely incomplete.** Reading
+`systemd/src/binfmt/binfmt.c` after the fact instead of before it:
+`apply_rule()` deletes the entry by name and re-registers. Declaring a rule
+named `WSLInterop` therefore **destroys Ubuntu's entry and substitutes ours** —
+`:WSLInterop:M::MZ::/run/binfmt/WSLInterop:PF`, whose interpreter is a tmpfiles
+symlink in this distribution's `/run`, resolvable elsewhere only because `F`
+pins the inode. Ubuntu's `/init:P` is gone, replaced by something whose lifetime
+is tied to a distribution that is about to be terminated or unregistered. Taking
+ownership of shared state you are about to delete is worse than leaving it
+alone.
+
+There is a second hazard in the same change. systemd's comment on
+`disable_binfmt()` says the shutdown flush exists "to cover for rules using F,
+since those might pin a file and thus block us from unmounting stuff cleanly".
+WSL can disarm that flush for Ubuntu because WSL's rule is `P` with no `F`. Ours
+is `PF`. The change disarms the flush *and* introduces the pinning rule.
+
+### The measurement that settled it, and it is not good news
+
+Run again on 2026-08-05 16:06, this time reading the registry **from Ubuntu**
+between the steps rather than only at the end. That is the whole difference, and
+it should have been the first thing done.
+
+| step | seen from Ubuntu |
+| --- | --- |
+| baseline | `WSLInterop`, `interpreter /init` |
+| `wsl -d NixOS`, left running | `WSLInterop`, `interpreter /init` — **unharmed** |
+| exit the NixOS shell → distro shuts down | **gone** |
+
+**The boot is harmless**, which also disposes of the takeover theory above. The
+interpreter still reads `/init` afterwards, not `/run/binfmt/WSLInterop` — WSL's
+generated drop-in adds a second `ExecStart` that re-registers its own line after
+`binfmt.d` has been applied, so the NixOS rule is overwritten by WSL's within
+the same service start. nixpkgs' `F`-pinned rule never survives to matter.
+
+**The shutdown does the damage, and nothing configurable is in that path.** From
+the journal of the NixOS distribution's own systemd:
+
+```
+systemd-binfmt.service: Deactivated successfully.   ← ExecStop= held; no process ran
+Stopped Set Up Additional Binary Formats.
+```
+
+### The root cause, found by a canary
+
+The reading above — "a delete by name, done by WSL" — was wrong too, and one
+more experiment killed it. Register a second entry under a name nothing in the
+system knows, run the cycle, and see whether it survives:
+
+```
+:WSLInterop:M::MZ::/init:P          both registered by hand, 16:28
+:WSLInteropKeep:M::MZ::/init:P
+                                    wsl -d NixOS, then exit
+WSLInteropKeep                      GONE
+```
+
+Nothing deletes `WSLInteropKeep` by name, because nothing knows the name — it
+was invented minutes earlier. **Only a whole-registry flush can remove it.** So
+there is a flush, and every "not a flush" line above is retracted.
+
+They were all founded on one bad assumption: that `.../binfmt_misc/status` would
+show a recent mtime if it had been written. **binfmt_misc does not update mtime
+on writes to `status`** — it still reads 2026-08-04 on a host where flushes have
+now been demonstrated. `register`'s mtime *does* move, which is what made the
+asymmetry so convincing and so wrong. A canary entry is the reliable test; mtime
+is not.
+
+**Where the flush comes from.** `disable_binfmt()` has exactly two callers in
+systemd:
+
+```c
+src/binfmt/binfmt.c:206:        return disable_binfmt();     /* --unregister, i.e. ExecStop */
+src/shutdown/shutdown.c:466:    (void) disable_binfmt();     /* unconditional */
+```
+
+The second is `systemd-shutdown` — what systemd *becomes* at the end of
+shutdown, after all units are stopped. It is not a unit. There is no `ExecStop`,
+no drop-in, no option, and nothing orderable after it; the next statement in the
+source is the `Sending SIGTERM to remaining processes...` line visible in every
+one of these shutdowns.
+
+So: **every systemd distribution's shutdown empties the shared registry for
+every distribution still running.** That is the whole bug, it explains
+`python3.14`, and it explains why 2026-08-04 broke with no relevant setting
+present at all.
+
+**Consequence for this repository: both settings in the PR are irrelevant to the
+actual mechanism**, and the same is true of the `wsl.interop.register = false`
+default they replaced. That is why 2026-08-04 broke identically with neither
+setting present. No NixOS-WSL configuration can prevent this, because the
+deletion does not happen inside NixOS-WSL.
+
+### Is the coexistence solvable at all?
+
+Yes in principle, and the reason is worth writing down: **the registry is
+designed to be shared.** WSL's line is `:WSLInterop:M::MZ::/init:P` — `P` with
+no `F`, so the interpreter path is resolved at *exec* time in the calling
+process's mount namespace. One global entry therefore serves every distribution
+correctly at once; Ubuntu's processes reach Ubuntu's `/init`, NixOS's reach
+NixOS's. There is no per-distribution entry that the single registry cannot
+hold. The problem was never the sharing.
+
+What is unsolvable *from inside a guest distribution* is the teardown delete.
+The remedies are all outside it:
+
+- **Ubuntu's system layer** re-registering on demand. Correct, and out of reach:
+  standalone home-manager has no system layer, and binfmt writes need root, so a
+  home-manager user service cannot do it. It would be unmanaged configuration in
+  `/etc/systemd/system`, which is exactly the kind of thing this repository
+  exists to avoid.
+- ~~**A spare entry under a different name.**~~ **Tested 2026-08-05, dead.** The
+  idea was redundancy rather than bait: a second working handler under a name
+  the teardown does not target. It was the canary that disproved itself — a
+  flush does not care about names. Recorded because the experiment is what found
+  the root cause, which is worth more than the idea was.
+
+- **Do not shut the guest down cleanly.** The flush is in `systemd-shutdown`, so
+  a distribution that never reaches it never flushes. Untested and probably not
+  reachable: WSL asks for a clean `systemctl poweroff` first and only falls back
+  to `reboot(RB_POWER_OFF)` after a ten-second timeout, which is visible in the
+  2026-08-04 journal.
+
+- **Make binfmt_misc unwritable inside the guest. This is the one that works**,
+  declared in `modules/wsl.nix` as `systemd.services.wsl-binfmt-protect` and
+  verified on 2026-08-05 — see below. `disable_binfmt()` opens with a guard:
+
+  ```c
+  r = binfmt_mounted_and_writable();
+  if (r == 0) {
+          log_debug("binfmt_misc is not mounted in read-write mode, not detaching entries.");
+          return 0;
+  }
+  ```
+
+  It checks `access_fd(fd, W_OK)` on `/proc/sys/fs/binfmt_misc`. A guest whose
+  copy of that mount is read-only therefore **skips the flush entirely** — the
+  same reason agent sandboxes, which bind it read-only, never trip this.
+
+  Two details are load-bearing. `--make-private` first, so nothing propagates
+  back to the distribution being protected; and `remount,`**`bind`**`,ro`,
+  because the `bind` is what confines read-only to *this mount* rather than to
+  the superblock — which is shared, so without it the registry would go
+  read-only for Ubuntu too, and Ubuntu is exactly who still needs to write to
+  it.
+
+  It costs the guest nothing it uses: read-only blocks *writing* the registry,
+  not reading or matching it, and WSL's entry names `/init` with `P` and no `F`,
+  so it resolves at exec time in the calling process's own namespace. `.exe`
+  keeps working inside the guest through whatever entry is already registered.
+
+  The two settings it replaces are removed rather than kept alongside, so the
+  experiment has one variable. The closure confirms that:
+  `systemd-binfmt.service` is absent from it and `/etc/binfmt.d/nixos.conf` is
+  empty.
+
+### It works, and this is what closes the experiment
+
+Verified 2026-08-05 by a person on a freshly imported distribution — the import
+matters, since neither this nor the UID takes effect on an existing one.
+
+| checked from Ubuntu | result |
+| --- | --- |
+| `WSLInterop` after two full boot→shutdown cycles | present, `interpreter /init`, `flags: P` |
+| `CanaryZZ`, registered by hand before the cycles | **present** — the flush never ran |
+| `cmd.exe /c echo ok` | runs |
+| `grep binfmt_misc /proc/mounts` in Ubuntu | `rw` — the `bind` scoping held |
+| after `wsl --unregister NixOS` | still fine |
+
+Inside the guest, `/proc/mounts` reports the same filesystem `ro`, and
+`wsl-binfmt-protect` is active.
+
+The canary is what makes this conclusive rather than encouraging. A surviving
+`WSLInterop` could always be explained by something re-registering it; a
+surviving `CanaryZZ` cannot, because nothing in either system knows that name.
+Its presence means no flush occurred at all.
+
+And the journal shows the flush was *attempted*, not merely absent — every one
+of those shutdowns reached
+
+```
+systemd-shutdown[1]: Sending SIGTERM to remaining processes...
+```
+
+which is the statement immediately after `disable_binfmt()` in `shutdown.c`. So
+`systemd-shutdown` ran, called it, and the writability guard declined. That is
+the entire claim, observed end to end.
+
+### What the fix does and does not guarantee
+
+Worth stating precisely, because it is easy to read the result as broader than
+it is. **The fix is one-directional: it stops this flavour being a *cause*. It
+does not make it immune.**
+
+*Guaranteed.* This distribution never flushes the registry, so anything running
+alongside it is safe from it, whatever else is on the machine.
+
+*Not guaranteed.* Any **other** systemd distribution's shutdown still flushes,
+and that still breaks interop for everyone left running — including us.
+Concretely: `wsl --terminate Ubuntu` while NixOS is up costs NixOS its interop,
+and nothing here prevents that.
+
+**Which distributions can do it** is answerable at a glance. Only those running
+systemd have a `systemd-shutdown` to run the flush, and WSL says which in its own
+log line:
+
+```
+WSL (2 - init-systemd(NixOS))      ← has systemd. can flush
+WSL (1 - init(docker-desktop))     ← no systemd. cannot
+```
+
+So Docker Desktop's distribution, which is on this machine and starts and stops
+constantly, has never been a suspect and never will be.
+
+**Creation order is irrelevant**, which is the other thing worth being explicit
+about. It does not matter which distribution was made first, which is "main", or
+which registered the entry — the registry is per-VM-boot, and WSL's line names
+`/init` with `P` and no `F`, so it is resolved per namespace at exec time and one
+entry serves every distribution correctly. Only *runtime* start and stop order
+matters.
+
+**`wsl --shutdown` is harmless** for the same reason: it destroys the VM, so the
+registry goes with it and is rebuilt from scratch at the next start.
+
+**Self-healing still works here.** WSL's `/init` registers `WSLInterop` when a
+distribution launches, before systemd — that is the whole reason WSL needs its
+`protectBinfmt` drop-in, "to prevent binfmt.d from overriding WSL's binfmt
+interpreter". `wsl-binfmt-protect` runs at `multi-user.target`, long after, so
+this distribution keeps its own ability to restore the entry at boot. Inferred
+from that drop-in's wording rather than observed directly.
+
+**In practice, on this machine**, the exposure is now narrow: Ubuntu is the
+permanent home and rarely shuts down on its own, and the common case — start
+NixOS, poke at it, exit — is what was broken and is now fixed.
+
+**The real fix is upstream**, in one of two places: WSL isolating `binfmt_misc`
+per distribution, the way [microsoft/WSL#40519](https://github.com/microsoft/WSL/pull/40519)
+does for cgroups; or systemd declining the shutdown flush when it has already
+`Detected virtualization wsl`. Neither exists, and this repository is not the
+place to wait for them.
+
+**What this experiment leaves behind.** Not the unit — that is nine lines and
+disposable. The method: three attempts, and the two that failed were both
+reasoned from *observed behaviour* ("the entry disappears at teardown, so
+teardown must delete it"), while the one that worked was reasoned from *reading
+the source of the thing doing the damage*. Two rebuilds and two broken
+afternoons separate those. When a mechanism is not visibly attributable, read
+the code that would have to be responsible before designing around a guess.
+- **Operationally:** run one distribution at a time, re-register by hand
+  afterwards. `docs/troubleshooting.md` carries the command. This is what to do
+  today.
+
+**The design rule both WSL findings share**, and the reason to keep them
+together: a guest distribution must not take ownership of kernel-global state —
+a cgroup path, a binfmt entry — that outlives it. UID 2000 avoids the collision
+by stepping aside. Interop cannot step aside, because there is only one name
+that WSL will honour.
+
 **Input hygiene.** NixOS-WSL pins its own nixpkgs (`e7a3ca8`, 2026-07-11),
 which is not ours. Without `inputs.nixos-wsl.inputs.nixpkgs.follows = "nixpkgs"`
 the flake evaluates two of them. The probe above used `follows` and the

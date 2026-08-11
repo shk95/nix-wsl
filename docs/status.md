@@ -40,7 +40,7 @@ Ubuntu 26.04 under WSL2, Nix 2.35.1 from the **upstream** installer — not
 Determinate, despite what the README recommends for a fresh setup. Activated
 since 2026-08-03, so `~/.config/nix/nix.conf` is managed and flakes need no
 `NIX_CONFIG`. The workaround that dominated every earlier session is now only
-for an unactivated clone; `CLAUDE.md` keeps it on that footing.
+for an unactivated clone; `AGENTS.md` keeps it on that footing.
 
 The login shell is the nix-managed zsh since 2026-08-04, registered in
 `/etc/shells` and set with `chsh`. Verified afterwards in a clean interactive
@@ -1115,12 +1115,51 @@ is the other way out.
 
 ---
 
+## Context ownership is split by audience and authority
+
+**Decision, 2026-08-11.** Repository context no longer has one Claude-specific
+file acting as project overview, host inventory, contribution guide and agent
+policy at the same time. Those concerns age differently and have different
+authorities, so keeping them together made every session load irrelevant prose
+and made a dated host claim look as durable as a design rule.
+
+The split is:
+
+- `AGENTS.md` is the model-independent judgement contract: goals, trade-offs,
+  safety boundaries and the few operational anchors required to apply them.
+- `CONTRIBUTING.md` is the shared workflow for people and tools.
+- `README.md` remains the user entry point; detailed findings stay under
+  `docs/`; executable policy stays in `tool/`, hooks and CI.
+- `CLAUDE.md` and `.claude/commands/` are compatibility adapters. They point to
+  the common sources and do not copy project policy.
+
+**Trade accepted:** `AGENTS.md` is not pure philosophy. Removing the activation
+boundary, verification entry points and source-of-truth pointers would save a
+few lines but leave each model to invent a different implementation of the same
+values. It therefore remains a small operational contract, while setup detail,
+layout narration and current host facts live elsewhere.
+
+**Local state is observed, not narrated.** Hook scripts are committed but
+`core.hooksPath` is clone-local. `tool/setup` reports the missing setting and
+changes it only with `--fix`; `tool/doctor.sh` remains read-only and checks the
+effective hooks, Git identity, GitHub authentication, Nix capabilities and
+declared configurations. Activation, login shell and model-local permissions
+remain outside repository ownership. Hooks are still bypassable and optional
+tools can still be absent, so CI remains the clean-clone authority.
+
+The migration is deliberately narrower than a rewrite of this status file into
+individual decision records. That may still be useful, but coupling historical
+reorganisation to the context boundary would make information loss harder to
+detect and this change harder to review.
+
+---
+
 ## Conventions
 
 Branch strategy, commit format, hooks and CI all come from
 [shk95/project-scaffold](https://github.com/shk95/project-scaffold); its
 `decisions/` directory carries the reasoning, which is not repeated here.
-`CLAUDE.md` has the short version that a session needs.
+`AGENTS.md` has the short, model-independent version that a session needs.
 
 `master` will sit visibly behind `dev`, often by a lot. That is the intended
 shape, not drift — `dev` is the default branch so that a clone lands on the

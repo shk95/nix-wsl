@@ -67,7 +67,8 @@ before activation, so the clone genuinely hit *experimental Nix feature
 host is activated now, so that path is documented but untested here. It needs a
 machine that has never run `home-manager switch`.
 
-- [x] The clone lands on `dev`, with `CLAUDE.md`, `tool/` and `docs/` present
+- [x] The clone lands on `dev`, with `AGENTS.md`, the `CLAUDE.md` compatibility
+      entry point, `tool/` and `docs/` present
 - [x] `tool/doctor.sh` fails on the unset hooks path and prints the exact
       command to fix it
 - [x] A deliberately malformed commit message is rejected by `commit-msg`
@@ -115,7 +116,7 @@ off `x86_64-linux` is out of scope rather than an experiment.
 
 - [ ] Each experiment ends with either an entry in `docs/troubleshooting.md` or
       a decision recorded in `docs/status.md`, with the reasoning
-- [ ] Anything that turned out to be load-bearing is added to the rules section
-      of `CLAUDE.md`
+- [ ] Anything that turned out to be load-bearing is added to the relevant
+      principle in `AGENTS.md`
 - [ ] An experiment abandoned part-way says so in `docs/status.md`, rather than
       being deleted silently — the next session needs to know it was tried

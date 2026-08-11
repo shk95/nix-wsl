@@ -1,0 +1,44 @@
+#!/bin/sh
+#
+# Reports and, only with --fix, applies configuration local to this clone.
+# Tracked files cannot set core.hooksPath during clone, so keeping this change
+# explicit prevents a setup helper from silently rewriting Git configuration.
+
+set -eu
+
+cd "$(dirname "$0")/.." || exit 1
+
+usage() {
+  echo "usage: tool/setup [--fix]" >&2
+  exit 2
+}
+
+case "${1:-}" in
+  "") fix=0 ;;
+  --fix) fix=1 ;;
+  *) usage ;;
+esac
+
+[ "$#" -le 1 ] || usage
+
+expected=.githooks
+current=$(git config --local --get core.hooksPath 2>/dev/null || true)
+
+if [ "$current" = "$expected" ]; then
+  echo "✓ core.hooksPath is $expected"
+  exit 0
+fi
+
+if [ -n "$current" ]; then
+  echo "! core.hooksPath is '$current'; this project expects '$expected'"
+else
+  echo "! core.hooksPath is not set for this clone"
+fi
+
+if [ "$fix" -eq 0 ]; then
+  echo "  No changes made. Run 'tool/setup --fix' to enable the tracked hooks."
+  exit 1
+fi
+
+git config --local core.hooksPath "$expected"
+echo "✓ set core.hooksPath to $expected"
